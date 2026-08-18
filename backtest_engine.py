@@ -3,6 +3,10 @@ Dynamic Swing Anchored VWAP (Zeiierman) — Backtesting Engine.
 
 Provides event-driven strategy simulation with realistic execution modeling,
 stop loss, take profit, trailing stops, transaction fees, and institutional risk metrics.
+
+Wiki References:
+- Bkz: [[backtest_engine]] (Varlık Dokümantasyonu)
+- Bkz: [[backtesting_strategy]] (Strateji ve Risk Yönetimi)
 """
 
 from __future__ import annotations

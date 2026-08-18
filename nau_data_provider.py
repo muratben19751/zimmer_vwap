@@ -1,6 +1,10 @@
 """
 NAU Data Provider for Dynamic Swing Anchored VWAP (Zeiierman).
 Seamlessly loads and caches data from the local NAU project (Nautilus Trader Equity Catalog and Bybit Parquet cache).
+
+Wiki References:
+- Bkz: [[nau_data_provider]] (Varlık Dokümantasyonu)
+- Bkz: [[architecture_overview]] (Sistem Mimarisi)
 """
 
 from __future__ import annotations

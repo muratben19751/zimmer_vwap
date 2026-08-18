@@ -1,6 +1,10 @@
 """
 FastAPI Server for Dynamic Swing Anchored VWAP Interactive Web Application & Backtest Terminal.
 Integrated with local NAU Project Data Provider (Nautilus Trader Catalog & Bybit Kline Cache).
+
+Wiki References:
+- Bkz: [[server_api]] (Varlık Dokümantasyonu)
+- Bkz: [[api_reference]] (REST Uç Noktaları)
 """
 
 from __future__ import annotations

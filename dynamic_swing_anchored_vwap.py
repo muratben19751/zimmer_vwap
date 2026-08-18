@@ -8,6 +8,11 @@ licensed CC BY-NC-SA 4.0. Keep attribution and non-commercial/share-alike terms 
 Dynamic Swing Anchored VWAP is an adaptive price-volume indicator that anchors VWAP
 at confirmed swing highs and lows, and continuously adapts its responsiveness using
 exponentially decayed volume-weighted price tracking with optional volatility (ATR) adaptation.
+
+Wiki References:
+- Bkz: [[dynamic_swing_anchored_vwap]] (Varlık Dokümantasyonu)
+- Bkz: [[dsa_vwap_theory]] (Matematiksel Teori)
+- Bkz: [[adaptive_period_tracking]] (APT Algoritması)
 """
 
 from __future__ import annotations
