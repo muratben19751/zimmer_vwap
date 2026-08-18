@@ -70,8 +70,8 @@ import * as Engine from "./engine.js";
   ];
 
   const state = {
-    // İlk açılış varsayılanı: Genişletilmiş Terminal
-    viewMode: localStorage.getItem("zvwap_view_mode") || "terminal",
+    // İlk açılış varsayılanı: 🎯 Kompakt Backtester (Design Handoff)
+    viewMode: localStorage.getItem("zvwap_view_mode") || "handoff",
     theme: localStorage.getItem("zvwap_theme") || "light",
     
     // Handoff state (QQQ ve 3 Yıl Varsayılan)

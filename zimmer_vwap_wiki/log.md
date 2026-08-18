@@ -34,5 +34,7 @@ Bu dosya, wiki üzerinde yapılan tüm senkronizasyon, ekleme, düzeltme ve anal
 - **Kum Saati Animasyonu:** Hesaplama sırasında dönen kum saati (`⏳`, `hourglass-flip` keyframes) göstergesi üst çubuğa ve butonlara eklendi.
 - **Pivot Tetikleyicileri:** Sağ parametre paneline HH, HL, LH, LL onay kutuları eklendi (tümü varsayılan seçili). Seçilen pivotlara göre alım/satım filtrelemesi devreye alındı.
 - **Genel Bakış Birleştirmesi:** Genel Bakış (Overview) paneli hem Genişletilmiş Terminal altına hem de Kompakt Backtester altına entegre edildi. NAU QQQ varsayılan sembol olarak bağlandı.
+- **Varsayılan Görünüm:** İlk açılış varsayılanı Kompakt Backtester (`handoff`) moduna ayarlandı.
+
 
 
