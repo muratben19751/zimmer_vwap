@@ -633,6 +633,51 @@ input:checked + .slider.round:before {
   display: flex;
 }
 
+/* BACKTEST SUB-TABS (TRADES CHART vs EQUITY CURVE) */
+.backtest-chart-tabs {
+  display: flex;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  gap: 6px;
+  width: fit-content;
+}
+
+.bt-chart-tab {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  padding: 6px 14px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.bt-chart-tab:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-hover);
+}
+
+.bt-chart-tab.active {
+  background-color: var(--accent-primary);
+  color: white;
+}
+
+.bt-chart-pane {
+  display: none;
+}
+
+.bt-chart-pane.active {
+  display: block;
+}
+
 /* METRICS ROW */
 .metrics-row {
   display: grid;
@@ -896,6 +941,11 @@ input:checked + .slider.round:before {
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-primary);
   font-family: 'JetBrains Mono', monospace;
+}
+
+.data-table tr {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
 }
 
 .data-table tr:hover td {

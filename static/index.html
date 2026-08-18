@@ -113,8 +113,8 @@
                 <select id="periodSelect">
                   <option value="1mo">1 Ay</option>
                   <option value="3mo">3 Ay</option>
-                  <option value="6mo">6 Ay</option>
-                  <option value="1y" selected>1 Yıl</option>
+                  <option value="6mo" selected>6 Ay</option>
+                  <option value="1y">1 Yıl</option>
                   <option value="2y">2 Yıl</option>
                   <option value="5y">5 Yıl</option>
                 </select>
@@ -406,7 +406,7 @@
         </div>
 
         <!-- ================================================================
-             VIEW 2: BACKTEST SCREEN
+             VIEW 2: BACKTEST SCREEN (WITH TRADES CHART & EQUITY CURVE)
              ================================================================ -->
         <div class="view-screen" id="viewBacktest">
           
@@ -443,23 +443,63 @@
             </div>
           </div>
 
-          <!-- BACKTEST CHARTS SECTION (Equity Curve vs Benchmark) -->
-          <div class="chart-section" style="height: 380px;">
-            <div class="chart-toolbar">
-              <div class="chart-title" id="btEquityChartTitle">Portföy Büyüme Eğrisi (Equity Curve) vs Buy & Hold Benchmark</div>
-              <div class="chart-legend">
-                <span class="legend-item"><span class="dot bull"></span> Strateji Portföyü</span>
-                <span class="legend-item"><span class="dot" style="background: #2962ff;"></span> Buy & Hold</span>
-              </div>
-              <button class="btn btn-icon btn-sm" id="btnResetEquityZoom" title="Grafiği Sıfırla">
-                <i data-lucide="maximize"></i>
-              </button>
-            </div>
+          <!-- BACKTEST SUB-TABS (TRADES CHART vs EQUITY CURVE) -->
+          <div class="backtest-chart-tabs">
+            <button class="bt-chart-tab active" id="btnBtTabTrades" data-tab="paneBtTrades">
+              <i data-lucide="crosshair"></i>
+              <span>İşlem Giriş & Çıkış Grafiği (DSAVWAP)</span>
+            </button>
+            <button class="bt-chart-tab" id="btnBtTabEquity" data-tab="paneBtEquity">
+              <i data-lucide="trending-up"></i>
+              <span>Portföy Büyüme Eğrisi (Equity Curve)</span>
+            </button>
+          </div>
 
-            <div class="chart-wrapper" id="tvEquityChartContainer">
-              <div class="chart-loader" id="btChartLoader">
-                <div class="spinner"></div>
-                <span>Backtest Simülasyonu Çalıştırılıyor...</span>
+          <!-- PANE 1: TRADES CANDLESTICK & DSAVWAP CHART -->
+          <div class="bt-chart-pane active" id="paneBtTrades">
+            <div class="chart-section" style="height: 480px;">
+              <div class="chart-toolbar">
+                <div class="chart-title" id="btTradesChartTitle">DSAVWAP Giriş & Çıkış Noktaları Grafiği</div>
+                <div class="chart-legend">
+                  <span class="legend-item"><span class="badge-trade long">BUY</span> Giriş (Long)</span>
+                  <span class="legend-item"><span class="badge-trade short">SELL</span> Giriş (Short)</span>
+                  <span class="legend-item"><span class="dot bull"></span> DSAVWAP Bull</span>
+                  <span class="legend-item"><span class="dot bear"></span> DSAVWAP Bear</span>
+                  <span class="legend-item"><span class="badge-mini badge-hh">TP/SL</span> Çıkış Noktası</span>
+                </div>
+                <button class="btn btn-icon btn-sm" id="btnResetBtTradesZoom" title="Grafiği Sıfırla">
+                  <i data-lucide="maximize"></i>
+                </button>
+              </div>
+
+              <div class="chart-wrapper" id="tvBtTradesChartContainer">
+                <div class="chart-loader" id="btTradesChartLoader">
+                  <div class="spinner"></div>
+                  <span>İşlem Sinyalleri ve DSAVWAP Hesaplanıyor...</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- PANE 2: EQUITY CURVE VS BENCHMARK CHART -->
+          <div class="bt-chart-pane" id="paneBtEquity">
+            <div class="chart-section" style="height: 480px;">
+              <div class="chart-toolbar">
+                <div class="chart-title" id="btEquityChartTitle">Portföy Büyüme Eğrisi (Equity Curve) vs Buy & Hold Benchmark</div>
+                <div class="chart-legend">
+                  <span class="legend-item"><span class="dot bull"></span> Strateji Portföyü</span>
+                  <span class="legend-item"><span class="dot" style="background: #2962ff;"></span> Buy & Hold</span>
+                </div>
+                <button class="btn btn-icon btn-sm" id="btnResetEquityZoom" title="Grafiği Sıfırla">
+                  <i data-lucide="maximize"></i>
+                </button>
+              </div>
+
+              <div class="chart-wrapper" id="tvEquityChartContainer">
+                <div class="chart-loader" id="btChartLoader">
+                  <div class="spinner"></div>
+                  <span>Backtest Simülasyonu Çalıştırılıyor...</span>
+                </div>
               </div>
             </div>
           </div>

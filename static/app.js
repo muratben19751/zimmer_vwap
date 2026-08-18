@@ -14,11 +14,19 @@ document.addEventListener("DOMContentLoaded", () => {
   let volumeSeries = null;
   let vwapSeriesMap = new Map(); // segment_id -> lineSeries
 
+  // Backtest Trades Chart (Candles + DSAVWAP + Trade Entry/Exit Markers)
+  let btTradesChart = null;
+  let btCandleSeries = null;
+  let btVolumeSeries = null;
+  let btVwapSeriesMap = new Map();
+
+  // Equity Chart
   let equityChart = null;
   let equitySeries = null;
   let benchmarkSeries = null;
 
   let currentMode = "chart"; // "chart" or "backtest"
+  let currentBtChartTab = "paneBtTrades"; // "paneBtTrades" or "paneBtEquity"
   let currentTab = "tab-ticker"; // "tab-ticker", "tab-csv", "tab-synthetic"
   let currentData = null;
   let currentBacktestData = null;
@@ -26,10 +34,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // DOM Elements
   const container = document.getElementById("tvChartContainer");
+  const btTradesContainer = document.getElementById("tvBtTradesChartContainer");
   const equityContainer = document.getElementById("tvEquityChartContainer");
+
   const chartLoader = document.getElementById("chartLoader");
   const btChartLoader = document.getElementById("btChartLoader");
+  const btTradesChartLoader = document.getElementById("btTradesChartLoader");
+
   const chartHeaderTitle = document.getElementById("chartHeaderTitle");
+  const btTradesChartTitle = document.getElementById("btTradesChartTitle");
   const btEquityChartTitle = document.getElementById("btEquityChartTitle");
   const currentTickerName = document.getElementById("currentTickerName");
   const currentTickerResolution = document.getElementById("currentTickerResolution");
@@ -41,6 +54,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const viewBacktest = document.getElementById("viewBacktest");
   const backtestSettingsGroup = document.getElementById("backtestSettingsGroup");
   const btnRecalculateText = document.getElementById("btnRecalculateText");
+
+  // Backtest Chart Tabs
+  const btnBtTabTrades = document.getElementById("btnBtTabTrades");
+  const btnBtTabEquity = document.getElementById("btnBtTabEquity");
+  const paneBtTrades = document.getElementById("paneBtTrades");
+  const paneBtEquity = document.getElementById("paneBtEquity");
 
   // Inputs
   const tickerInput = document.getElementById("tickerInput");
@@ -73,6 +92,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnThemeToggle = document.getElementById("btnThemeToggle");
   const themeIcon = document.getElementById("themeIcon");
   const btnResetZoom = document.getElementById("btnResetZoom");
+  const btnResetBtTradesZoom = document.getElementById("btnResetBtTradesZoom");
   const btnResetEquityZoom = document.getElementById("btnResetEquityZoom");
 
   // CSV
@@ -125,7 +145,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function initChart() {
-    if (!window.LightweightCharts) return;
+    if (!window.LightweightCharts || !container) return;
     if (chart) {
       chart.remove();
       chart = null;
@@ -180,6 +200,62 @@ document.addEventListener("DOMContentLoaded", () => {
     vwapSeriesMap.clear();
   }
 
+  function initBtTradesChart() {
+    if (!window.LightweightCharts || !btTradesContainer) return;
+    if (btTradesChart) {
+      btTradesChart.remove();
+      btTradesChart = null;
+    }
+
+    const { bg, textColor, gridColor } = getThemeColors();
+
+    btTradesChart = window.LightweightCharts.createChart(btTradesContainer, {
+      width: btTradesContainer.clientWidth,
+      height: btTradesContainer.clientHeight,
+      layout: {
+        background: { color: bg },
+        textColor: textColor,
+        fontFamily: "'Inter', sans-serif",
+      },
+      grid: {
+        vertLines: { color: gridColor },
+        horzLines: { color: gridColor },
+      },
+      crosshair: {
+        mode: window.LightweightCharts.CrosshairMode.Normal,
+      },
+      rightPriceScale: {
+        borderColor: gridColor,
+        scaleMargins: { top: 0.1, bottom: 0.25 },
+      },
+      timeScale: {
+        borderColor: gridColor,
+        timeVisible: true,
+        secondsVisible: false,
+      },
+    });
+
+    btCandleSeries = btTradesChart.addCandlestickSeries({
+      upColor: "#089981",
+      downColor: "#f23645",
+      borderVisible: false,
+      wickUpColor: "#089981",
+      wickDownColor: "#f23645",
+    });
+
+    btVolumeSeries = btTradesChart.addHistogramSeries({
+      color: "#26a69a",
+      priceFormat: { type: "volume" },
+      priceScaleId: "volume",
+    });
+
+    btTradesChart.priceScale("volume").applyOptions({
+      scaleMargins: { top: 0.8, bottom: 0 },
+    });
+
+    btVwapSeriesMap.clear();
+  }
+
   function initEquityChart() {
     if (!window.LightweightCharts || !equityContainer) return;
     if (equityChart) {
@@ -215,7 +291,6 @@ document.addEventListener("DOMContentLoaded", () => {
       },
     });
 
-    // Equity curve (Green area)
     equitySeries = equityChart.addAreaSeries({
       topColor: "rgba(8, 153, 129, 0.4)",
       bottomColor: "rgba(8, 153, 129, 0.0)",
@@ -224,7 +299,6 @@ document.addEventListener("DOMContentLoaded", () => {
       priceLineVisible: true,
     });
 
-    // Benchmark curve (Blue line)
     benchmarkSeries = equityChart.addLineSeries({
       color: "#2962ff",
       lineWidth: 2,
@@ -236,6 +310,9 @@ document.addEventListener("DOMContentLoaded", () => {
   function handleResize() {
     if (chart && container) {
       chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
+    }
+    if (btTradesChart && btTradesContainer) {
+      btTradesChart.applyOptions({ width: btTradesContainer.clientWidth, height: btTradesContainer.clientHeight });
     }
     if (equityChart && equityContainer) {
       equityChart.applyOptions({ width: equityContainer.clientWidth, height: equityContainer.clientHeight });
@@ -314,7 +391,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function runBacktest() {
-    btChartLoader.classList.add("active");
+    if (btChartLoader) btChartLoader.classList.add("active");
+    if (btTradesChartLoader) btTradesChartLoader.classList.add("active");
 
     const payload = {
       swing_period: parseInt(swingPeriodRange.value),
@@ -361,7 +439,8 @@ document.addEventListener("DOMContentLoaded", () => {
       alert("Backtest Hatası: " + err.message);
       console.error(err);
     } finally {
-      btChartLoader.classList.remove("active");
+      if (btChartLoader) btChartLoader.classList.remove("active");
+      if (btTradesChartLoader) btTradesChartLoader.classList.remove("active");
     }
   }
 
@@ -442,14 +521,107 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderBacktestDashboard(data) {
+    if (!btTradesChart) initBtTradesChart();
     if (!equityChart) initEquityChart();
 
     const bt = data.backtest;
-    btEquityChartTitle.textContent = `${data.source} — Equity Curve vs Buy & Hold (${bt.total_trades} İşlem)`;
+    const chartData = data.chart;
+
+    btTradesChartTitle.textContent = `${data.source} — DSAVWAP Giriş & Çıkış Noktaları (${bt.total_trades} İşlem)`;
+    btEquityChartTitle.textContent = `${data.source} — Equity Curve vs Buy & Hold Benchmark (${bt.total_trades} İşlem)`;
     currentTickerName.textContent = (currentTab === "tab-ticker" ? tickerInput.value.toUpperCase() : (currentTab === "tab-csv" ? "CSV" : "Simülasyon"));
     currentTickerResolution.textContent = `${periodSelect.value} · ${intervalSelect.value}`;
 
-    // KPI Cards
+    // 1. Render Backtest Trades Chart (Candles + DSAVWAP + Trade Entry/Exit Markers)
+    btCandleSeries.setData(chartData.candles);
+    btVolumeSeries.setData(chartData.volumes);
+
+    for (const [, s] of btVwapSeriesMap) {
+      btTradesChart.removeSeries(s);
+    }
+    btVwapSeriesMap.clear();
+
+    const segmentMap = new Map();
+    for (const pt of chartData.vwap_points) {
+      if (!segmentMap.has(pt.segment_id)) {
+        segmentMap.set(pt.segment_id, { dir: pt.dir, points: [] });
+      }
+      segmentMap.get(pt.segment_id).points.push({ time: pt.time, value: pt.value });
+    }
+
+    for (const [segId, seg] of segmentMap) {
+      const color = seg.dir > 0 ? "#089981" : "#f23645";
+      const lineSeries = btTradesChart.addLineSeries({
+        color: color,
+        lineWidth: 2,
+        crosshairMarkerVisible: true,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+      lineSeries.setData(seg.points);
+      btVwapSeriesMap.set(segId, lineSeries);
+    }
+
+    // Build combined markers: Swing Anchors + Trade Entries + Trade Exits
+    const combinedMarkers = [];
+
+    // Add Swing Labels
+    for (const a of chartData.anchors) {
+      combinedMarkers.push({
+        time: a.time,
+        position: a.position,
+        color: a.color,
+        shape: a.shape,
+        text: a.label,
+        size: 1.0,
+      });
+    }
+
+    // Add Trade Entry & Exit Markers
+    for (const t of bt.trades) {
+      const isLong = t.direction === "LONG";
+      const isWin = t.pnl >= 0;
+
+      // Entry Marker
+      combinedMarkers.push({
+        time: t.entry_time,
+        position: isLong ? "belowBar" : "aboveBar",
+        color: isLong ? "#089981" : "#f23645",
+        shape: isLong ? "arrowUp" : "arrowDown",
+        text: isLong ? `BUY L (#${t.trade_id})` : `SELL S (#${t.trade_id})`,
+        size: 1.5,
+      });
+
+      // Exit Marker (if exit_time != entry_time)
+      const exitReasonShort = t.exit_reason === "TAKE_PROFIT" ? "TP" :
+                              t.exit_reason === "STOP_LOSS" ? "SL" :
+                              t.exit_reason === "TRAILING_STOP" ? "TR-SL" :
+                              t.exit_reason === "SIGNAL_REVERSAL" ? "REV" : "EXIT";
+
+      combinedMarkers.push({
+        time: t.exit_time,
+        position: isLong ? "aboveBar" : "belowBar",
+        color: isWin ? "#089981" : "#f23645",
+        shape: "circle",
+        text: `${exitReasonShort} (${t.pnl_pct >= 0 ? "+" : ""}${t.pnl_pct}%)`,
+        size: 1.3,
+      });
+    }
+
+    // Sort markers by time
+    combinedMarkers.sort((a, b) => a.time - b.time);
+    btCandleSeries.setMarkers(combinedMarkers);
+    btTradesChart.timeScale().fitContent();
+
+    // 2. Render Equity Curve Chart
+    const eqData = bt.equity_curve.map((e) => ({ time: e.time, value: e.equity }));
+    const benchData = bt.equity_curve.map((e) => ({ time: e.time, value: e.benchmark }));
+
+    equitySeries.setData(eqData);
+    benchmarkSeries.setData(benchData);
+    equityChart.timeScale().fitContent();
+
+    // 3. KPI Cards
     const isProfit = bt.net_profit >= 0;
     btNetProfit.textContent = `$${bt.net_profit.toLocaleString()} (${isProfit ? "+" : ""}${bt.net_profit_pct}%)`;
     btNetProfit.className = `metric-value font-mono ${isProfit ? "text-bull" : "text-bear"}`;
@@ -468,15 +640,7 @@ document.addEventListener("DOMContentLoaded", () => {
     btSharpeSortino.textContent = `${bt.sharpe_ratio.toFixed(2)} / ${bt.sortino_ratio.toFixed(2)}`;
     btAvgTrade.textContent = `Ort. İşlem: ${bt.avg_trade_pnl_pct >= 0 ? "+" : ""}${bt.avg_trade_pnl_pct}%`;
 
-    // Equity Curve Chart
-    const eqData = bt.equity_curve.map((e) => ({ time: e.time, value: e.equity }));
-    const benchData = bt.equity_curve.map((e) => ({ time: e.time, value: e.benchmark }));
-
-    equitySeries.setData(eqData);
-    benchmarkSeries.setData(benchData);
-    equityChart.timeScale().fitContent();
-
-    // Trade Log Table
+    // 4. Trade Log Table
     countTrades.textContent = bt.trades.length;
     renderTradesTable(bt.trades);
   }
@@ -554,13 +718,13 @@ document.addEventListener("DOMContentLoaded", () => {
       .map((t) => {
         const entryStr = new Date(t.entry_time * 1000).toLocaleDateString("tr-TR");
         const exitStr = new Date(t.exit_time * 1000).toLocaleDateString("tr-TR");
-        const isWin = t.pnl > 0;
+        const isWin = t.pnl >= 0;
         const dirBadge = t.direction === "LONG" ? '<span class="badge-trade long">LONG</span>' : '<span class="badge-trade short">SHORT</span>';
         const pnlClass = isWin ? "text-bull" : "text-bear";
 
         return `
-          <tr>
-            <td>${t.trade_id}</td>
+          <tr data-entry-time="${t.entry_time}" data-exit-time="${t.exit_time}" title="Grafikte bu işleme odaklanmak için tıklayın">
+            <td>#${t.trade_id}</td>
             <td>${entryStr}</td>
             <td>${exitStr}</td>
             <td>${dirBadge}</td>
@@ -577,10 +741,29 @@ document.addEventListener("DOMContentLoaded", () => {
       })
       .reverse()
       .join("");
+
+    // Click trade row to zoom chart to that trade
+    document.querySelectorAll("#tradesTableBody tr").forEach((row) => {
+      row.addEventListener("click", () => {
+        const entryTime = parseInt(row.dataset.entryTime);
+        const exitTime = parseInt(row.dataset.exitTime);
+        if (entryTime && btTradesChart) {
+          // Switch to Trades Chart tab if in Equity tab
+          if (currentBtChartTab !== "paneBtTrades") {
+            btnBtTabTrades.click();
+          }
+          const buffer = 86400 * 5; // 5 days buffer
+          btTradesChart.timeScale().setVisibleRange({
+            from: entryTime - buffer,
+            to: exitTime + buffer,
+          });
+        }
+      });
+    });
   }
 
   // --------------------------------------------------------------------------
-  // 4. Mode Switcher & Event Listeners
+  // 4. Mode Switcher & Sub-Tab Event Listeners
   // --------------------------------------------------------------------------
   btnModeChart.addEventListener("click", () => {
     currentMode = "chart";
@@ -608,9 +791,41 @@ document.addEventListener("DOMContentLoaded", () => {
     btnRecalculateText.textContent = "Backtest'i Başlat";
 
     setTimeout(() => {
+      if (!btTradesChart) initBtTradesChart();
       if (!equityChart) initEquityChart();
       if (currentBacktestData) renderBacktestDashboard(currentBacktestData);
       else runBacktest();
+    }, 50);
+  });
+
+  // Backtest Chart Tabs (Trades Chart vs Equity Curve)
+  btnBtTabTrades.addEventListener("click", () => {
+    currentBtChartTab = "paneBtTrades";
+    btnBtTabTrades.classList.add("active");
+    btnBtTabEquity.classList.remove("active");
+    paneBtTrades.classList.add("active");
+    paneBtEquity.classList.remove("active");
+
+    setTimeout(() => {
+      if (btTradesChart && btTradesContainer) {
+        btTradesChart.applyOptions({ width: btTradesContainer.clientWidth, height: btTradesContainer.clientHeight });
+        btTradesChart.timeScale().fitContent();
+      }
+    }, 50);
+  });
+
+  btnBtTabEquity.addEventListener("click", () => {
+    currentBtChartTab = "paneBtEquity";
+    btnBtTabEquity.classList.add("active");
+    btnBtTabTrades.classList.remove("active");
+    paneBtEquity.classList.add("active");
+    paneBtTrades.classList.remove("active");
+
+    setTimeout(() => {
+      if (equityChart && equityContainer) {
+        equityChart.applyOptions({ width: equityContainer.clientWidth, height: equityContainer.clientHeight });
+        equityChart.timeScale().fitContent();
+      }
     }, 50);
   });
 
@@ -720,10 +935,16 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // Reset Zoom
+  // Reset Zoom Buttons
   btnResetZoom.addEventListener("click", () => {
     if (chart) chart.timeScale().fitContent();
   });
+
+  if (btnResetBtTradesZoom) {
+    btnResetBtTradesZoom.addEventListener("click", () => {
+      if (btTradesChart) btTradesChart.timeScale().fitContent();
+    });
+  }
 
   if (btnResetEquityZoom) {
     btnResetEquityZoom.addEventListener("click", () => {
@@ -755,6 +976,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     if (chart) chart.applyOptions(colors);
+    if (btTradesChart) btTradesChart.applyOptions(colors);
     if (equityChart) equityChart.applyOptions(colors);
   });
 
