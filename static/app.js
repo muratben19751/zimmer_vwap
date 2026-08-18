@@ -1,8 +1,6 @@
 /**
- * Zimmer VWAP — Hybrid Application Controller
- * Seamlessly manages Dual Interfaces:
- *   1. Handoff Strategy Tester (High-DPI Canvas + Bands + Strategy Tester Panel)
- *   2. Extended Financial Terminal (Lightweight Charts + Extended Sidebar & Inspector)
+ * Zimmer VWAP — Dynamic Swing Anchored VWAP Backtester & Terminal
+ * Unified High-Fidelity Application Powered by TradingView Lightweight Charts
  */
 
 import * as Engine from "./engine.js";
@@ -11,7 +9,7 @@ import * as Engine from "./engine.js";
   "use strict";
 
   // --------------------------------------------------------------------------
-  // 1. App State
+  // 1. Constants & State
   // --------------------------------------------------------------------------
   const MO = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
   const DEF_PARAMS = {
@@ -24,6 +22,38 @@ import * as Engine from "./engine.js";
     commPct: 0.05,
   };
 
+  const HARDCODED_EQUITIES = [
+    { symbol: "NVDA", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "AAPL", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "TSLA", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "AMD", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "AMZN", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "MSFT", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "GOOGL", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "META", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "SPY", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "QQQ", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "QQQC", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "QQQQ", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "IWM", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "HOOD", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "IBM", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "AA", venue: "NASDAQ", total_bars: 58988 },
+  ];
+
+  const HARDCODED_BYBIT = [
+    { symbol: "BTCUSDT", category: "linear" },
+    { symbol: "ETHUSDT", category: "linear" },
+    { symbol: "SOLUSDT", category: "linear" },
+    { symbol: "DOGEUSDT", category: "linear" },
+    { symbol: "BTCUSDT", category: "spot" },
+    { symbol: "ETHUSDT", category: "spot" },
+    { symbol: "SOLUSDT", category: "spot" },
+    { symbol: "BTCUSDT", category: "inverse" },
+    { symbol: "ETHUSDT", category: "inverse" },
+    { symbol: "SOLUSDT", category: "inverse" },
+  ];
+
   const state = {
     viewMode: localStorage.getItem("zvwap_view_mode") || "handoff", // "handoff" | "terminal"
     theme: localStorage.getItem("zvwap_theme") || "light",
@@ -35,9 +65,10 @@ import * as Engine from "./engine.js";
     dateTo: "",
     handoffTab: "overview", // "overview" | "perf" | "trades"
     params: { ...DEF_PARAMS },
+    nauCatalog: null,
 
     // Terminal state
-    terminalSource: "nau", // "nau" | "ticker" | "csv" | "sim"
+    terminalSource: "nau",
     terminalNauCategory: "equity",
     terminalData: null,
     terminalInspectorTab: "anchors",
@@ -46,22 +77,22 @@ import * as Engine from "./engine.js";
   let renderState = {
     data: [],
     vw: [],
+    swings: [],
     trades: [],
     equity: [],
     met: null,
-    view: { s: 0, e: 0 },
-    hover: null,
-    dragging: false,
-    dragX: 0,
-    dragView: { s: 0, e: 0 },
-    rafId: 0,
   };
 
-  // Lightweight Charts instances
-  let lwChart = null;
-  let lwCandleSeries = null;
-  let lwVolumeSeries = null;
-  let lwVwapSeriesMap = new Map();
+  // TradingView Lightweight Charts instances
+  let handoffLwChart = null;
+  let handoffCandleSeries = null;
+  let handoffVolumeSeries = null;
+  let handoffVwapSeriesList = [];
+
+  let termLwChart = null;
+  let termCandleSeries = null;
+  let termVolumeSeries = null;
+  let termVwapSeriesMap = new Map();
 
   // --------------------------------------------------------------------------
   // 2. DOM Elements
@@ -88,7 +119,7 @@ import * as Engine from "./engine.js";
   const ranLabel = document.getElementById("ranLabel");
 
   const chartWrap = document.getElementById("chartWrap");
-  const chartCanvas = document.getElementById("chartCanvas");
+  const handoffLwChartContainer = document.getElementById("handoffLwChartContainer");
 
   const tabBtnOverview = document.getElementById("tabBtnOverview");
   const tabBtnPerf = document.getElementById("tabBtnPerf");
@@ -152,6 +183,8 @@ import * as Engine from "./engine.js";
   const termChartTitle = document.getElementById("termChartTitle");
   const termTabInspectorAnchors = document.getElementById("termTabInspectorAnchors");
   const termTabInspectorBars = document.getElementById("termTabInspectorBars");
+  const termTabInspectorBacktest = document.getElementById("termTabInspectorBacktest");
+  const termBacktestSummaryBar = document.getElementById("termBacktestSummaryBar");
   const termInspectorCount = document.getElementById("termInspectorCount");
   const termTableHead = document.getElementById("termTableHead");
   const termTableBody = document.getElementById("termTableBody");
@@ -184,34 +217,11 @@ import * as Engine from "./engine.js";
     })}`;
   }
 
-  function ft(t, tf = state.tf) {
-    if (!t) return "";
-    const d = new Date(t);
-    const dd = `${d.getUTCDate()} ${MO[d.getUTCMonth()]}`;
-    if (tf === "1D") return dd;
-    return `${dd} ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
-  }
-
-  function ft2(t, tf = state.tf) {
+  function ft2(t) {
     if (!t) return "";
     const d = new Date(t);
     const dd = `${d.getUTCDate()} ${MO[d.getUTCMonth()]} '${String(d.getUTCFullYear()).slice(2)}`;
-    if (tf === "1D") return dd;
     return `${dd} ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
-  }
-
-  function niceTicks(min, max, n) {
-    const span = max - min;
-    if (span <= 0) return [];
-    const step0 = span / Math.max(2, n);
-    const mag = Math.pow(10, Math.floor(Math.log10(step0)));
-    const norm = step0 / mag;
-    const step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
-    const out = [];
-    for (let v = Math.ceil(min / step) * step; v <= max; v += step) {
-      out.push(v);
-    }
-    return out;
   }
 
   function getThemeColors() {
@@ -228,12 +238,8 @@ import * as Engine from "./engine.js";
       accent: cs.getPropertyValue("--accent").trim() || "#2962ff",
       bull: cs.getPropertyValue("--bull").trim() || "#089981",
       bear: cs.getPropertyValue("--bear").trim() || "#f23645",
-      bandFill: cs.getPropertyValue("--band-fill").trim() || "rgba(41,98,255,0.07)",
-      bandLine1: cs.getPropertyValue("--band-line1").trim() || "rgba(41,98,255,0.4)",
+      bandLine1: cs.getPropertyValue("--band-line1").trim() || "rgba(41,98,255,0.45)",
       bandLine2: cs.getPropertyValue("--band-line2").trim() || "rgba(41,98,255,0.25)",
-      crosshairLine: cs.getPropertyValue("--crosshair-line").trim() || "#758696",
-      crosshairTagBg: cs.getPropertyValue("--crosshair-tag-bg").trim() || "#363a45",
-      crosshairTagText: cs.getPropertyValue("--crosshair-tag-text").trim() || "#ffffff",
     };
   }
 
@@ -251,7 +257,20 @@ import * as Engine from "./engine.js";
       viewTerminal.style.display = "none";
       handoffTopControls.style.display = "flex";
       btnRunBacktest.style.display = "flex";
-      requestDraw();
+
+      if (!handoffLwChart) {
+        initHandoffLightweightChart();
+      }
+      setTimeout(() => {
+        if (handoffLwChart && handoffLwChartContainer) {
+          handoffLwChart.applyOptions({
+            width: handoffLwChartContainer.clientWidth,
+            height: handoffLwChartContainer.clientHeight,
+          });
+        }
+        drawEquity();
+      }, 50);
+      loadHandoffData();
     } else {
       btnViewTerminal.classList.add("active");
       btnViewHandoff.classList.remove("active");
@@ -260,9 +279,17 @@ import * as Engine from "./engine.js";
       handoffTopControls.style.display = "none";
       btnRunBacktest.style.display = "none";
 
-      if (!lwChart) {
-        initLightweightChart();
+      if (!termLwChart) {
+        initTerminalLightweightChart();
       }
+      setTimeout(() => {
+        if (termLwChart && termChartContainer) {
+          termLwChart.applyOptions({
+            width: termChartContainer.clientWidth,
+            height: termChartContainer.clientHeight,
+          });
+        }
+      }, 50);
       loadTerminalData();
     }
   }
@@ -270,38 +297,6 @@ import * as Engine from "./engine.js";
   // --------------------------------------------------------------------------
   // 5. NAU Catalog & Data Loading
   // --------------------------------------------------------------------------
-  const HARDCODED_EQUITIES = [
-    { symbol: "NVDA", venue: "NASDAQ", total_bars: 58988 },
-    { symbol: "AAPL", venue: "NASDAQ", total_bars: 58988 },
-    { symbol: "TSLA", venue: "NASDAQ", total_bars: 58988 },
-    { symbol: "AMD", venue: "NASDAQ", total_bars: 58988 },
-    { symbol: "AMZN", venue: "NASDAQ", total_bars: 58988 },
-    { symbol: "MSFT", venue: "NASDAQ", total_bars: 58988 },
-    { symbol: "GOOGL", venue: "NASDAQ", total_bars: 58988 },
-    { symbol: "META", venue: "NASDAQ", total_bars: 58988 },
-    { symbol: "SPY", venue: "NASDAQ", total_bars: 58988 },
-    { symbol: "QQQ", venue: "NASDAQ", total_bars: 58988 },
-    { symbol: "QQQC", venue: "NASDAQ", total_bars: 58988 },
-    { symbol: "QQQQ", venue: "NASDAQ", total_bars: 58988 },
-    { symbol: "IWM", venue: "NASDAQ", total_bars: 58988 },
-    { symbol: "HOOD", venue: "NASDAQ", total_bars: 58988 },
-    { symbol: "IBM", venue: "NASDAQ", total_bars: 58988 },
-    { symbol: "AA", venue: "NASDAQ", total_bars: 58988 },
-  ];
-
-  const HARDCODED_BYBIT = [
-    { symbol: "BTCUSDT", category: "linear" },
-    { symbol: "ETHUSDT", category: "linear" },
-    { symbol: "SOLUSDT", category: "linear" },
-    { symbol: "DOGEUSDT", category: "linear" },
-    { symbol: "BTCUSDT", category: "spot" },
-    { symbol: "ETHUSDT", category: "spot" },
-    { symbol: "SOLUSDT", category: "spot" },
-    { symbol: "BTCUSDT", category: "inverse" },
-    { symbol: "ETHUSDT", category: "inverse" },
-    { symbol: "SOLUSDT", category: "inverse" },
-  ];
-
   async function fetchNauCatalog() {
     try {
       const res = await fetch("/api/nau/catalog");
@@ -331,7 +326,6 @@ import * as Engine from "./engine.js";
         });
       }
 
-      // Populate Terminal Selectors
       updateTerminalSymbolSelect(cat);
     } catch (e) {
       console.warn("NAU Catalog fetch hatası, varsayılanlar yükleniyor:", e);
@@ -370,8 +364,64 @@ import * as Engine from "./engine.js";
   }
 
   // --------------------------------------------------------------------------
-  // 6. Handoff Strategy Tester Controller
+  // 6. Kompakt Backtester Controller (with TradingView Lightweight Charts)
   // --------------------------------------------------------------------------
+  function initHandoffLightweightChart() {
+    const container = document.getElementById("handoffLwChartContainer");
+    if (!container || !window.LightweightCharts) return;
+
+    const colors = getThemeColors();
+    handoffLwChart = LightweightCharts.createChart(container, {
+      width: container.clientWidth || 800,
+      height: container.clientHeight || 400,
+      layout: {
+        background: { type: "solid", color: colors.bgApp },
+        textColor: colors.textMain,
+        fontFamily: getComputedStyle(htmlEl).fontFamily || "-apple-system, Segoe UI, sans-serif",
+      },
+      grid: {
+        vertLines: { color: colors.borderSubtle },
+        horzLines: { color: colors.borderSubtle },
+      },
+      crosshair: {
+        mode: LightweightCharts.CrosshairMode.Normal,
+      },
+      rightPriceScale: {
+        borderColor: colors.border,
+      },
+      timeScale: {
+        borderColor: colors.border,
+        timeVisible: true,
+        secondsVisible: false,
+      },
+    });
+
+    handoffCandleSeries = handoffLwChart.addCandlestickSeries({
+      upColor: colors.bull,
+      downColor: colors.bear,
+      borderVisible: false,
+      wickUpColor: colors.bull,
+      wickDownColor: colors.bear,
+    });
+
+    handoffVolumeSeries = handoffLwChart.addHistogramSeries({
+      priceFormat: { type: "volume" },
+      priceScaleId: "",
+    });
+    handoffVolumeSeries.priceScale().applyOptions({
+      scaleMargins: { top: 0.82, bottom: 0 },
+    });
+
+    window.addEventListener("resize", () => {
+      if (handoffLwChart && container) {
+        handoffLwChart.applyOptions({
+          width: container.clientWidth,
+          height: container.clientHeight,
+        });
+      }
+    });
+  }
+
   async function loadHandoffData() {
     if (ranLabel) ranLabel.textContent = "Hesaplanıyor…";
     let rawBars = [];
@@ -408,7 +458,7 @@ import * as Engine from "./engine.js";
             h: c.high,
             l: c.low,
             c: c.close,
-            v: resData.volumes[i] ? resData.volumes[i].value : 1000,
+            v: resData.volumes && resData.volumes[i] ? resData.volumes[i].value : 1000,
           }));
           if (statusBadge) {
             statusBadge.textContent = `${resData.source} — Canlı Veri`;
@@ -448,13 +498,12 @@ import * as Engine from "./engine.js";
     const met = Engine.metrics(bt.trades, bt.equity, state.params.capital, state.tf);
     met.comm = bt.commTotal;
 
-    const n = data.length;
     renderState.data = data;
     renderState.vw = vw;
+    renderState.swings = swings;
     renderState.trades = bt.trades;
     renderState.equity = bt.equity;
     renderState.met = met;
-    renderState.view = { s: Math.max(0, n - 170), e: n };
 
     if (ranLabel) {
       ranLabel.textContent = `Son çalıştırma: ${new Date().toLocaleTimeString("tr-TR")}`;
@@ -465,118 +514,46 @@ import * as Engine from "./engine.js";
       statusLeft.textContent = `${cleanName} · ${state.tf} · ${data.length} bar · ${ft2(data[0].t)} → ${ft2(data[data.length - 1].t)}`;
     }
 
+    renderHandoffLightweightChart(data, vw, swings, bt.trades);
     renderKpiTiles(met);
     renderPerformanceSummary(met);
     renderTradesTable(bt.trades, data);
-
-    requestDraw();
+    drawEquity();
   }
 
-  function requestDraw() {
-    if (renderState.rafId) return;
-    renderState.rafId = requestAnimationFrame(() => {
-      renderState.rafId = 0;
-      drawChart();
-      drawEquity();
-    });
-  }
-
-  function drawChart() {
-    const cv = chartCanvas;
-    const { data, vw, trades, view, hover } = renderState;
-    if (!cv || !data.length || !view.e || state.viewMode !== "handoff") return;
-
-    const wrap = chartWrap;
-    const W = wrap.clientWidth;
-    const H = wrap.clientHeight;
-    if (W < 60 || H < 60) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    cv.width = W * dpr;
-    cv.height = H * dpr;
-    const g = cv.getContext("2d");
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  function renderHandoffLightweightChart(data, vw, swings, trades) {
+    if (!handoffLwChart) initHandoffLightweightChart();
+    if (!handoffLwChart) return;
 
     const colors = getThemeColors();
-    g.fillStyle = colors.bgApp;
-    g.fillRect(0, 0, W, H);
 
-    const AX = 62;
-    const TB = 24;
-    const pw = W - AX;
-    const ph = H - TB;
-    const v0 = view.s;
-    const v1 = view.e;
-    const n = v1 - v0;
+    // 1. Candles & Volume
+    const candleData = data.map((b) => ({
+      time: Math.floor(b.t / 1000),
+      open: b.o,
+      high: b.h,
+      low: b.l,
+      close: b.c,
+    }));
 
-    let lo = 1e18, hi = -1e18, maxV = 0;
-    for (let i = v0; i < v1; i++) {
-      const b = data[i];
-      if (b.l < lo) lo = b.l;
-      if (b.h > hi) hi = b.h;
-      if (b.v > maxV) maxV = b.v;
-      const w = vw[i];
-      if (w) {
-        if (w.l2 < lo) lo = w.l2;
-        if (w.u2 > hi) hi = w.u2;
-      }
-    }
-    const pad = (hi - lo) * 0.08 || 1;
-    lo -= pad;
-    hi += pad;
+    const volumeData = data.map((b) => ({
+      time: Math.floor(b.t / 1000),
+      value: b.v,
+      color: b.c >= b.o ? "rgba(8,153,129,0.35)" : "rgba(242,54,69,0.35)",
+    }));
 
-    const x = (i) => ((i - v0 + 0.5) * pw) / n;
-    const y = (p) => ph * (1 - (p - lo) / (hi - lo));
-    const font = getComputedStyle(htmlEl).fontFamily || "-apple-system, Segoe UI, sans-serif";
+    handoffCandleSeries.setData(candleData);
+    handoffVolumeSeries.setData(volumeData);
 
-    // Grid & Price Ticks
-    g.font = `10px ${font}`;
-    g.textBaseline = "middle";
-    for (const t of niceTicks(lo + pad * 0.4, hi - pad * 0.4, ph / 56)) {
-      const yy = y(t);
-      g.strokeStyle = colors.borderSubtle;
-      g.beginPath();
-      g.moveTo(0, yy);
-      g.lineTo(pw, yy);
-      g.stroke();
+    // 2. Clear old VWAP line series
+    handoffVwapSeriesList.forEach((s) => handoffLwChart.removeSeries(s));
+    handoffVwapSeriesList = [];
 
-      g.fillStyle = colors.textMuted;
-      g.textAlign = "left";
-      g.fillText(fp(t), pw + 6, yy);
-    }
-
-    // Time Ticks
-    const every = Math.max(1, Math.round(92 / (pw / n)));
-    g.textAlign = "center";
-    g.textBaseline = "top";
-    for (let i = v0; i < v1; i++) {
-      if (i % every !== 0) continue;
-      const xx = x(i);
-      g.strokeStyle = colors.borderSubtle;
-      g.beginPath();
-      g.moveTo(xx, 0);
-      g.lineTo(xx, ph);
-      g.stroke();
-
-      g.fillStyle = colors.textMuted;
-      g.fillText(ft(data[i].t), xx, ph + 7);
-    }
-
-    // Volume Bars
-    const vh = ph * 0.15;
-    const bw2 = Math.max(1, (pw / n) * 0.7);
-    for (let i = v0; i < v1; i++) {
-      const b = data[i];
-      g.fillStyle = b.c >= b.o ? "rgba(8,153,129,0.28)" : "rgba(242,54,69,0.28)";
-      const h2 = (b.v / maxV) * vh;
-      g.fillRect(x(i) - bw2 / 2, ph - h2, bw2, h2);
-    }
-
-    // DSAVWAP Bands & Curves
+    // 3. Segment VWAP Lines & Deviation Bands
     const segs = [];
     let seg = [];
     let curAnchor = null;
-    for (let i = v0; i < v1; i++) {
+    for (let i = 0; i < data.length; i++) {
       const w = vw[i];
       if (!w) {
         if (seg.length) { segs.push(seg); seg = []; }
@@ -592,203 +569,110 @@ import * as Engine from "./engine.js";
     }
     if (seg.length) segs.push(seg);
 
-    for (const s of segs) {
-      if (s.length > 1) {
-        g.beginPath();
-        s.forEach(([i, w], k) => {
-          k ? g.lineTo(x(i), y(w.u1)) : g.moveTo(x(i), y(w.u1));
-        });
-        for (let k = s.length - 1; k >= 0; k--) {
-          g.lineTo(x(s[k][0]), y(s[k][1].l1));
-        }
-        g.closePath();
-        g.fillStyle = colors.bandFill;
-        g.fill();
+    segs.forEach((s) => {
+      const isBull = s[0][1].aType === "L";
+      const vwapColor = isBull ? colors.bull : colors.bear;
 
-        const drawBandLine = (key, strokeStyle, dash) => {
-          g.beginPath();
-          s.forEach(([i, w], k) => {
-            k ? g.lineTo(x(i), y(w[key])) : g.moveTo(x(i), y(w[key]));
-          });
-          g.strokeStyle = strokeStyle;
-          g.lineWidth = 1;
-          g.setLineDash(dash);
-          g.stroke();
-          g.setLineDash([]);
-        };
-
-        drawBandLine("u1", colors.bandLine1, []);
-        drawBandLine("l1", colors.bandLine1, []);
-        drawBandLine("u2", colors.bandLine2, [4, 4]);
-        drawBandLine("l2", colors.bandLine2, [4, 4]);
-      }
-
-      g.beginPath();
-      s.forEach(([i, w], k) => {
-        k ? g.lineTo(x(i), y(w.v)) : g.moveTo(x(i), y(w.v));
+      // VWAP Main Line
+      const vwapLine = handoffLwChart.addLineSeries({
+        color: vwapColor,
+        lineWidth: 2,
+        crosshairMarkerVisible: true,
+        priceLineVisible: false,
+        lastValueVisible: false,
       });
-      g.strokeStyle = s[0][1].aType === "L" ? colors.bull : colors.bear;
-      g.lineWidth = 1.6;
-      g.stroke();
-      g.lineWidth = 1;
+      vwapLine.setData(s.map(([i, w]) => ({ time: Math.floor(data[i].t / 1000), value: w.v })));
+      handoffVwapSeriesList.push(vwapLine);
 
-      // Anchor diamond
-      const aI = s[0][1].aI;
-      if (aI >= v0 && aI < v1) {
-        const ap = s[0][1].aType === "L" ? data[aI].l : data[aI].h;
-        const ax = x(aI);
-        const ay = y(ap) + (s[0][1].aType === "L" ? 8 : -8);
-        g.beginPath();
-        g.moveTo(ax, ay - 5);
-        g.lineTo(ax + 5, ay);
-        g.lineTo(ax, ay + 5);
-        g.lineTo(ax - 5, ay);
-        g.closePath();
-        g.fillStyle = s[0][1].aType === "L" ? colors.bull : colors.bear;
-        g.fill();
-      }
-    }
+      // +1σ & -1σ Bands
+      const u1Line = handoffLwChart.addLineSeries({
+        color: colors.bandLine1,
+        lineWidth: 1,
+        crosshairMarkerVisible: false,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+      u1Line.setData(s.map(([i, w]) => ({ time: Math.floor(data[i].t / 1000), value: w.u1 })));
+      handoffVwapSeriesList.push(u1Line);
 
-    // Candlesticks
-    const bw = Math.max(1, Math.min(11, (pw / n) * 0.7));
-    for (let i = v0; i < v1; i++) {
-      const b = data[i];
-      const up = b.c >= b.o;
-      const col = up ? colors.bull : colors.bear;
-      const xx = x(i);
+      const l1Line = handoffLwChart.addLineSeries({
+        color: colors.bandLine1,
+        lineWidth: 1,
+        crosshairMarkerVisible: false,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+      l1Line.setData(s.map(([i, w]) => ({ time: Math.floor(data[i].t / 1000), value: w.l1 })));
+      handoffVwapSeriesList.push(l1Line);
 
-      g.strokeStyle = col;
-      g.beginPath();
-      g.moveTo(xx, y(b.h));
-      g.lineTo(xx, y(b.l));
-      g.stroke();
+      // +2σ & -2σ Bands (Dashed)
+      const u2Line = handoffLwChart.addLineSeries({
+        color: colors.bandLine2,
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        crosshairMarkerVisible: false,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+      u2Line.setData(s.map(([i, w]) => ({ time: Math.floor(data[i].t / 1000), value: w.u2 })));
+      handoffVwapSeriesList.push(u2Line);
 
-      g.fillStyle = col;
-      g.fillRect(xx - bw / 2, Math.min(y(b.o), y(b.c)), bw, Math.max(1, Math.abs(y(b.o) - y(b.c))));
-    }
-
-    // Trade Markers
-    const drawTriangle = (xx, yy, upDir, col) => {
-      g.beginPath();
-      if (upDir) {
-        g.moveTo(xx, yy - 5);
-        g.lineTo(xx + 5, yy + 4);
-        g.lineTo(xx - 5, yy + 4);
-      } else {
-        g.moveTo(xx, yy + 5);
-        g.lineTo(xx + 5, yy - 4);
-        g.lineTo(xx - 5, yy - 4);
-      }
-      g.closePath();
-      g.fillStyle = col;
-      g.fill();
-    };
-
-    for (const t of trades) {
-      const inEntry = t.ei >= v0 && t.ei < v1;
-      const inExit = t.xi != null && t.xi >= v0 && t.xi < v1;
-
-      if (inEntry && t.xi != null && (inExit || t.xi >= v1)) {
-        g.beginPath();
-        g.moveTo(x(t.ei), y(t.entry));
-        g.lineTo(x(Math.min(t.xi, v1 - 1)), y(t.exit ?? t.entry));
-        g.strokeStyle = t.pnl >= 0 ? "rgba(8,153,129,0.55)" : "rgba(242,54,69,0.55)";
-        g.setLineDash([3, 3]);
-        g.stroke();
-        g.setLineDash([]);
-      }
-
-      if (inEntry) {
-        if (t.side === "L") drawTriangle(x(t.ei), y(data[t.ei].l) + 12, true, colors.bull);
-        else drawTriangle(x(t.ei), y(data[t.ei].h) - 12, false, colors.bear);
-      }
-
-      if (inExit) {
-        const xx = x(t.xi);
-        const yy = t.side === "L" ? y(data[t.xi].h) - 10 : y(data[t.xi].l) + 10;
-        g.fillStyle = "#50535e";
-        g.fillRect(xx - 3, yy - 3, 6, 6);
-      }
-    }
-
-    // Crosshair
-    let hb = v1 - 1;
-    if (hover && hover.mx < pw && hover.my < ph) {
-      hb = Math.max(v0, Math.min(v1 - 1, Math.round((hover.mx / pw) * n + v0 - 0.5)));
-      const cx = x(hb);
-      const cy = hover.my;
-
-      g.strokeStyle = colors.crosshairLine;
-      g.setLineDash([4, 4]);
-      g.beginPath();
-      g.moveTo(cx, 0);
-      g.lineTo(cx, ph);
-      g.moveTo(0, cy);
-      g.lineTo(pw, cy);
-      g.stroke();
-      g.setLineDash([]);
-
-      const pv = lo + (1 - cy / ph) * (hi - lo);
-      g.fillStyle = colors.crosshairTagBg;
-      g.fillRect(pw, cy - 9, AX, 18);
-      g.fillStyle = colors.crosshairTagText;
-      g.textAlign = "left";
-      g.textBaseline = "middle";
-      g.font = `10px ${font}`;
-      g.fillText(fp(pv), pw + 6, cy);
-
-      const tl = ft2(data[hb].t);
-      const tw = g.measureText(tl).width + 14;
-      g.fillStyle = colors.crosshairTagBg;
-      g.fillRect(cx - tw / 2, ph, tw, TB - 2);
-      g.fillStyle = colors.crosshairTagText;
-      g.textAlign = "center";
-      g.fillText(tl, cx, ph + 11);
-    }
-
-    // Legend
-    const B = data[hb];
-    const Wv = vw[hb];
-    g.textAlign = "left";
-    g.textBaseline = "alphabetic";
-    g.font = `700 12px ${font}`;
-    g.fillStyle = colors.textStrong;
-    const cleanSym = state.symbol.replace(/^nau:[^:]+:/, "");
-    g.fillText(`${cleanSym} · ${state.tf} · Zimmer VWAP Stratejisi`, 10, 20);
-
-    g.font = `11px ${font}`;
-    let lx = 10;
-    const cc = B.c >= B.o ? colors.bull : colors.bear;
-    [
-      ["A", B.o],
-      ["Y", B.h],
-      ["D", B.l],
-      ["K", B.c],
-    ].forEach(([k, val]) => {
-      g.fillStyle = colors.textMuted;
-      g.fillText(k, lx, 38);
-      lx += g.measureText(k).width + 3;
-      g.fillStyle = cc;
-      const s = fp(val);
-      g.fillText(s, lx, 38);
-      lx += g.measureText(s).width + 10;
+      const l2Line = handoffLwChart.addLineSeries({
+        color: colors.bandLine2,
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        crosshairMarkerVisible: false,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+      l2Line.setData(s.map(([i, w]) => ({ time: Math.floor(data[i].t / 1000), value: w.l2 })));
+      handoffVwapSeriesList.push(l2Line);
     });
 
-    if (Wv) {
-      g.fillStyle = Wv.aType === "L" ? colors.bull : colors.bear;
-      g.fillText(`VWAP ${fp(Wv.v)}  ·  Çapa: ${Wv.aType === "L" ? "Swing Dip" : "Swing Tepe"} (${ft(data[Wv.aI].t)})`, 10, 54);
-      g.fillStyle = colors.textMuted;
-      g.fillText(`+1σ ${fp(Wv.u1)}   −1σ ${fp(Wv.l1)}   ±2σ bantları kesikli`, 10, 69);
-    }
+    // 4. Markers for Swings & Trade Signals
+    const markers = [];
 
-    // Border
-    g.strokeStyle = colors.border;
-    g.beginPath();
-    g.moveTo(pw + 0.5, 0);
-    g.lineTo(pw + 0.5, H);
-    g.moveTo(0, ph + 0.5);
-    g.lineTo(W, ph + 0.5);
-    g.stroke();
+    // Swing Pivot Markers
+    (swings || []).forEach((sw) => {
+      const isHigh = sw.type === "H";
+      markers.push({
+        time: Math.floor(data[sw.index].t / 1000),
+        position: isHigh ? "aboveBar" : "belowBar",
+        color: isHigh ? colors.bear : colors.bull,
+        shape: isHigh ? "arrowDown" : "arrowUp",
+        text: sw.label || (isHigh ? "H" : "L"),
+        size: 1.0,
+      });
+    });
+
+    // Trade Markers
+    (trades || []).forEach((t) => {
+      if (data[t.ei]) {
+        const isLong = t.side === "L";
+        markers.push({
+          time: Math.floor(data[t.ei].t / 1000),
+          position: isLong ? "belowBar" : "aboveBar",
+          color: isLong ? colors.bull : colors.bear,
+          shape: isLong ? "arrowUp" : "arrowDown",
+          text: isLong ? "BUY" : "SELL",
+          size: 1.4,
+        });
+      }
+      if (t.xi != null && data[t.xi]) {
+        markers.push({
+          time: Math.floor(data[t.xi].t / 1000),
+          position: t.side === "L" ? "aboveBar" : "belowBar",
+          color: "#758696",
+          shape: "circle",
+          text: "EXIT",
+          size: 0.9,
+        });
+      }
+    });
+
+    markers.sort((a, b) => a.time - b.time);
+    handoffCandleSeries.setMarkers(markers);
+    handoffLwChart.timeScale().fitContent();
   }
 
   function drawEquity() {
@@ -830,7 +714,9 @@ import * as Engine from "./engine.js";
 
     g.font = `10px ${font}`;
     g.textBaseline = "middle";
-    for (const t of niceTicks(lo, hi, ph / 44)) {
+    const span = hi - lo;
+    const step = span / 4;
+    for (let t = lo; t <= hi; t += step) {
       const yy = y(t);
       g.strokeStyle = colors.borderSubtle;
       g.beginPath();
@@ -964,13 +850,13 @@ import * as Engine from "./engine.js";
   }
 
   // --------------------------------------------------------------------------
-  // 7. Terminal (Lightweight Charts) Controller
+  // 7. Terminal Controller
   // --------------------------------------------------------------------------
-  function initLightweightChart() {
+  function initTerminalLightweightChart() {
     if (!termChartContainer || !window.LightweightCharts) return;
 
     const colors = getThemeColors();
-    lwChart = LightweightCharts.createChart(termChartContainer, {
+    termLwChart = LightweightCharts.createChart(termChartContainer, {
       width: termChartContainer.clientWidth || 800,
       height: termChartContainer.clientHeight || 420,
       layout: {
@@ -994,7 +880,7 @@ import * as Engine from "./engine.js";
       },
     });
 
-    lwCandleSeries = lwChart.addCandlestickSeries({
+    termCandleSeries = termLwChart.addCandlestickSeries({
       upColor: colors.bull,
       downColor: colors.bear,
       borderVisible: false,
@@ -1002,17 +888,17 @@ import * as Engine from "./engine.js";
       wickDownColor: colors.bear,
     });
 
-    lwVolumeSeries = lwChart.addHistogramSeries({
+    termVolumeSeries = termLwChart.addHistogramSeries({
       priceFormat: { type: "volume" },
       priceScaleId: "",
     });
-    lwVolumeSeries.priceScale().applyOptions({
+    termVolumeSeries.priceScale().applyOptions({
       scaleMargins: { top: 0.8, bottom: 0 },
     });
 
     window.addEventListener("resize", () => {
-      if (lwChart && termChartContainer) {
-        lwChart.applyOptions({
+      if (termLwChart && termChartContainer) {
+        termLwChart.applyOptions({
           width: termChartContainer.clientWidth,
           height: termChartContainer.clientHeight,
         });
@@ -1070,21 +956,19 @@ import * as Engine from "./engine.js";
   }
 
   function renderTerminalDashboard(data) {
-    if (!lwChart) initLightweightChart();
-    if (!lwChart) return;
+    if (!termLwChart) initTerminalLightweightChart();
+    if (!termLwChart) return;
 
     termChartTitle.textContent = `${data.source} — Dynamic Swing Anchored VWAP`;
 
-    lwCandleSeries.setData(data.candles);
-    lwVolumeSeries.setData(data.volumes);
+    termCandleSeries.setData(data.candles);
+    termVolumeSeries.setData(data.volumes);
 
-    // Remove previous VWAP lines
-    for (const [, s] of lwVwapSeriesMap) {
-      lwChart.removeSeries(s);
+    for (const [, s] of termVwapSeriesMap) {
+      termLwChart.removeSeries(s);
     }
-    lwVwapSeriesMap.clear();
+    termVwapSeriesMap.clear();
 
-    // Map segments
     const segmentMap = new Map();
     for (const pt of data.vwap_points) {
       if (!segmentMap.has(pt.segment_id)) {
@@ -1095,7 +979,7 @@ import * as Engine from "./engine.js";
 
     for (const [segId, seg] of segmentMap) {
       const color = seg.dir > 0 ? "#089981" : "#f23645";
-      const lineSeries = lwChart.addLineSeries({
+      const lineSeries = termLwChart.addLineSeries({
         color: color,
         lineWidth: 2,
         crosshairMarkerVisible: true,
@@ -1103,7 +987,7 @@ import * as Engine from "./engine.js";
         lastValueVisible: false,
       });
       lineSeries.setData(seg.points);
-      lwVwapSeriesMap.set(segId, lineSeries);
+      termVwapSeriesMap.set(segId, lineSeries);
     }
 
     const markers = (data.anchors || []).map((a) => ({
@@ -1114,10 +998,9 @@ import * as Engine from "./engine.js";
       text: a.label,
       size: 1.2,
     }));
-    lwCandleSeries.setMarkers(markers);
-    lwChart.timeScale().fitContent();
+    termCandleSeries.setMarkers(markers);
+    termLwChart.timeScale().fitContent();
 
-    // KPI Banner
     const m = data.metrics;
     termKpiPrice.textContent = `$${m.latest_close.toLocaleString()}`;
     termKpiPriceChange.textContent = `${m.price_change_pct >= 0 ? "+" : ""}${m.price_change_pct}%`;
@@ -1139,7 +1022,6 @@ import * as Engine from "./engine.js";
 
   function renderTerminalInspectorTable(data) {
     if (!termTableBody) return;
-    const termBacktestSummaryBar = document.getElementById("termBacktestSummaryBar");
 
     if (state.terminalInspectorTab === "anchors") {
       if (termBacktestSummaryBar) termBacktestSummaryBar.style.display = "none";
@@ -1192,7 +1074,6 @@ import * as Engine from "./engine.js";
         </tr>
       `).join("");
     } else if (state.terminalInspectorTab === "backtest") {
-      // Run client-side backtest on current candles
       const rawBars = (data.candles || []).map((c, i) => ({
         t: c.time * 1000,
         o: c.open,
@@ -1273,14 +1154,21 @@ import * as Engine from "./engine.js";
       state.theme = themeSelect.value;
       htmlEl.setAttribute("data-theme", state.theme);
       localStorage.setItem("zvwap_theme", state.theme);
-      requestDraw();
-      if (lwChart) {
-        const c = getThemeColors();
-        lwChart.applyOptions({
+      
+      const c = getThemeColors();
+      if (handoffLwChart) {
+        handoffLwChart.applyOptions({
           layout: { background: { type: "solid", color: c.bgApp }, textColor: c.textMain },
           grid: { vertLines: { color: c.borderSubtle }, horzLines: { color: c.borderSubtle } },
         });
       }
+      if (termLwChart) {
+        termLwChart.applyOptions({
+          layout: { background: { type: "solid", color: c.bgApp }, textColor: c.textMain },
+          grid: { vertLines: { color: c.borderSubtle }, horzLines: { color: c.borderSubtle } },
+        });
+      }
+      drawEquity();
     });
 
     // 3. Handoff Top Toolbar
@@ -1343,7 +1231,7 @@ import * as Engine from "./engine.js";
         btn.style.borderBottom = "2px solid var(--accent)";
         content.style.display = id === "perf" ? "block" : "flex";
         state.handoffTab = id;
-        requestDraw();
+        if (id === "overview") drawEquity();
       });
     });
 
@@ -1439,7 +1327,6 @@ import * as Engine from "./engine.js";
     termPrdSlider.addEventListener("input", () => { termPrdVal.textContent = termPrdSlider.value; });
     termAptSlider.addEventListener("input", () => { termAptVal.textContent = termAptSlider.value; });
     termBtnCalculate.addEventListener("click", () => loadTerminalData());
-    const termTabInspectorBacktest = document.getElementById("termTabInspectorBacktest");
 
     termTabInspectorAnchors.addEventListener("click", () => {
       termTabInspectorAnchors.classList.add("active");
@@ -1467,63 +1354,15 @@ import * as Engine from "./engine.js";
       });
     }
 
-    // 5. Canvas Interactions (Zoom & Pan)
-    chartCanvas.addEventListener("wheel", (e) => {
-      e.preventDefault();
-      const { data, view } = renderState;
-      if (!data.length || !view.e) return;
-      const r = chartCanvas.getBoundingClientRect();
-      const fx = Math.max(0, Math.min(1, (e.clientX - r.left) / (r.width - 62)));
-      const N = data.length;
-      const len = view.e - view.s;
-      const nl = Math.max(25, Math.min(N, Math.round(len * (e.deltaY > 0 ? 1.2 : 0.85))));
-      const c = view.s + len * fx;
-      let s = Math.round(c - nl * fx);
-      s = Math.max(0, Math.min(N - nl, s));
-      renderState.view = { s, e: s + nl };
-      requestDraw();
-    }, { passive: false });
-
-    chartCanvas.addEventListener("mousemove", (e) => {
-      const r = chartCanvas.getBoundingClientRect();
-      renderState.hover = { mx: e.clientX - r.left, my: e.clientY - r.top };
-      if (renderState.dragging) {
-        const el = chartCanvas;
-        const { data, dragView, dragX } = renderState;
-        if (!el || !data.length) return;
-        const rect = el.getBoundingClientRect();
-        const perBar = (rect.width - 62) / (dragView.e - dragView.s);
-        const bars = Math.round((e.clientX - dragX) / perBar);
-        if (bars) {
-          const n = data.length;
-          const len = dragView.e - dragView.s;
-          const s = Math.max(0, Math.min(n - len, dragView.s - bars));
-          renderState.view = { s, e: s + len };
-        }
+    const ro = new ResizeObserver(() => {
+      if (handoffLwChart && handoffLwChartContainer) {
+        handoffLwChart.applyOptions({
+          width: handoffLwChartContainer.clientWidth,
+          height: handoffLwChartContainer.clientHeight,
+        });
       }
-      requestDraw();
+      drawEquity();
     });
-
-    chartCanvas.addEventListener("mouseleave", () => {
-      renderState.hover = null;
-      requestDraw();
-    });
-
-    chartCanvas.addEventListener("mousedown", (e) => {
-      renderState.dragging = true;
-      renderState.dragX = e.clientX;
-      renderState.dragView = { ...renderState.view };
-      e.preventDefault();
-    });
-
-    window.addEventListener("mouseup", () => {
-      if (renderState.dragging) {
-        renderState.dragging = false;
-        requestDraw();
-      }
-    });
-
-    const ro = new ResizeObserver(() => requestDraw());
     ro.observe(chartWrap);
     ro.observe(equityWrap);
   }
@@ -1535,11 +1374,6 @@ import * as Engine from "./engine.js";
     setupEventListeners();
     await fetchNauCatalog();
     setViewMode(state.viewMode);
-    if (state.viewMode === "handoff") {
-      await loadHandoffData();
-    } else {
-      await loadTerminalData();
-    }
   }
 
   if (document.readyState === "loading") {

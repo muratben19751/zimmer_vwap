@@ -128,9 +128,9 @@
         <!-- Sol Grafik & Alt Tester Kolonu -->
         <div style="flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden;">
           
-          <!-- Canvas Grafik Alanı -->
+          <!-- TradingView Lightweight Charts Grafik Alanı -->
           <div id="chartWrap" style="flex: 1; position: relative; min-height: 0; background: var(--bg-app);">
-            <canvas id="chartCanvas" style="position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair;"></canvas>
+            <div id="handoffLwChartContainer" style="position: absolute; inset: 0; width: 100%; height: 100%; display: block;"></div>
           </div>
 
           <!-- Strateji Test Aracı Alt Paneli (272px sabit) -->
@@ -439,7 +439,7 @@
 
   </div>
 
-  <script type="module" src="app.js?t=20260818_backtest_v4"></script>
+  <script type="module" src="app.js?t=20260818_lwbacktest_v5"></script>
   <script src="hub-nav.js"></script>
 </body>
 </html>
