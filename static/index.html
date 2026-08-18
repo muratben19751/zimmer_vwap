@@ -394,6 +394,33 @@
             </div>
           </div>
 
+          <!-- Tetikleyici Pivotlar -->
+          <div class="form-group-card">
+            <div class="form-group-title">Tetikleyici Pivotlar (Giriş/Çıkış)</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 11px;">
+              <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                <input type="checkbox" id="termTriggerHH" checked />
+                <span class="badge-pivot badge-high" style="font-size: 9px; padding: 1px 4px;">HH</span>
+                <span>Higher High</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                <input type="checkbox" id="termTriggerHL" checked />
+                <span class="badge-pivot badge-low" style="font-size: 9px; padding: 1px 4px;">HL</span>
+                <span>Higher Low</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                <input type="checkbox" id="termTriggerLH" checked />
+                <span class="badge-pivot badge-high" style="font-size: 9px; padding: 1px 4px;">LH</span>
+                <span>Lower High</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                <input type="checkbox" id="termTriggerLL" checked />
+                <span class="badge-pivot badge-low" style="font-size: 9px; padding: 1px 4px;">LL</span>
+                <span>Lower Low</span>
+              </label>
+            </div>
+          </div>
+
           <!-- Terminal Hesapla Butonu -->
           <button id="termBtnCalculate" class="btn-primary" style="width: 100%; justify-content: center; height: 36px;">
             ⚡ Hesapla ve Grafiğe Yansıt
@@ -439,33 +466,46 @@
           <div id="termChartContainer" style="flex: 1; position: relative; width: 100%; height: 100%;"></div>
         </div>
 
-        <!-- Alt Tablo Denetçisi -->
-        <div class="inspector-card" style="min-height: 280px; flex: 1;">
+        <!-- Alt Tablo ve Strateji Denetçisi -->
+        <div class="inspector-card" style="min-height: 290px; flex: 1; display: flex; flex-direction: column;">
           <div class="inspector-head">
             <div class="inspector-tabs">
-              <button class="inspector-tab active" id="termTabInspectorAnchors">Pivot Çapaları</button>
-              <button class="inspector-tab" id="termTabInspectorBars">Son 100 Bar</button>
-              <button class="inspector-tab" id="termTabInspectorBacktest" style="color: var(--accent); font-weight: 700;">🎯 Strateji Backtest (İşlemler)</button>
+              <button class="inspector-tab active" id="termTabInspectorOverview" style="font-weight: 700; color: var(--accent);">📊 Genel Bakış</button>
+              <button class="inspector-tab" id="termTabInspectorBacktest">🎯 İşlem Listesi</button>
+              <button class="inspector-tab" id="termTabInspectorAnchors">🏷️ Pivot Çapaları</button>
+              <button class="inspector-tab" id="termTabInspectorBars">📜 Bar Verileri</button>
             </div>
-            <span class="badge-tag" id="termInspectorCount">0 Kayıt</span>
+            <span class="badge-tag" id="termInspectorCount">Backtest Özeti</span>
           </div>
-          <div id="termBacktestSummaryBar" style="display: none; padding: 6px 12px; background: var(--bg-card); border-bottom: 1px solid var(--border); font-size: 11px; align-items: center; justify-content: space-between;"></div>
-          <div style="flex: 1; overflow-y: auto; max-height: 320px;">
-            <table class="data-table" id="termDataTable">
-              <thead id="termTableHead">
-                <tr>
-                  <th>Tür</th>
-                  <th>Çapa Fiyatı</th>
-                  <th>Tarih</th>
-                  <th>Bar İndeksi</th>
-                  <th>Segment</th>
-                  <th>Yön</th>
-                </tr>
-              </thead>
-              <tbody id="termTableBody">
-                <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Veri yüklenmedi.</td></tr>
-              </tbody>
-            </table>
+
+          <!-- Sekme 1: Terminal Genel Bakış (3x2 KPI + Equity & Buy/Hold Canvas) -->
+          <div id="termContentOverview" style="display: flex; flex: 1; min-height: 240px; overflow: hidden;">
+            <div id="termKpiTilesContainer" style="width: 440px; flex: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px; align-content: start; border-right: 1px solid var(--border-subtle); overflow-y: auto;"></div>
+            <div id="termEquityWrap" style="flex: 1; position: relative; min-width: 0; min-height: 200px;">
+              <canvas id="termEquityCanvas" style="position: absolute; inset: 0; width: 100%; height: 100%; display: block;"></canvas>
+            </div>
+          </div>
+
+          <!-- Sekme 2, 3, 4: Tablolar -->
+          <div id="termContentTable" style="display: none; flex-direction: column; flex: 1; overflow: hidden;">
+            <div id="termBacktestSummaryBar" style="display: none; padding: 6px 12px; background: var(--bg-card); border-bottom: 1px solid var(--border); font-size: 11px; align-items: center; justify-content: space-between;"></div>
+            <div style="flex: 1; overflow-y: auto; max-height: 320px;">
+              <table class="data-table" id="termDataTable">
+                <thead id="termTableHead">
+                  <tr>
+                    <th>Tür</th>
+                    <th>Çapa Fiyatı</th>
+                    <th>Tarih</th>
+                    <th>Bar İndeksi</th>
+                    <th>Segment</th>
+                    <th>Yön</th>
+                  </tr>
+                </thead>
+                <tbody id="termTableBody">
+                  <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Veri yüklenmedi.</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
@@ -475,7 +515,7 @@
 
   </div>
 
-  <script type="module" src="app.js?t=20260818_engine_v9"></script>
+  <script type="module" src="app.js?t=20260818_engine_v10"></script>
   <script src="hub-nav.js"></script>
 </body>
 </html>

@@ -38,6 +38,7 @@ import * as Engine from "./engine.js";
   };
 
   const HARDCODED_EQUITIES = [
+    { symbol: "QQQ", venue: "NASDAQ", total_bars: 58988 },
     { symbol: "NVDA", venue: "NASDAQ", total_bars: 58988 },
     { symbol: "AAPL", venue: "NASDAQ", total_bars: 58988 },
     { symbol: "TSLA", venue: "NASDAQ", total_bars: 58988 },
@@ -47,7 +48,6 @@ import * as Engine from "./engine.js";
     { symbol: "GOOGL", venue: "NASDAQ", total_bars: 58988 },
     { symbol: "META", venue: "NASDAQ", total_bars: 58988 },
     { symbol: "SPY", venue: "NASDAQ", total_bars: 58988 },
-    { symbol: "QQQ", venue: "NASDAQ", total_bars: 58988 },
     { symbol: "QQQC", venue: "NASDAQ", total_bars: 58988 },
     { symbol: "QQQQ", venue: "NASDAQ", total_bars: 58988 },
     { symbol: "IWM", venue: "NASDAQ", total_bars: 58988 },
@@ -70,7 +70,7 @@ import * as Engine from "./engine.js";
   ];
 
   const state = {
-    // 1. İlk açılış varsayılanı: Genişletilmiş Terminal
+    // İlk açılış varsayılanı: Genişletilmiş Terminal
     viewMode: localStorage.getItem("zvwap_view_mode") || "terminal",
     theme: localStorage.getItem("zvwap_theme") || "light",
     
@@ -87,7 +87,8 @@ import * as Engine from "./engine.js";
     terminalSource: "nau",
     terminalNauCategory: "equity",
     terminalData: null,
-    terminalInspectorTab: "anchors",
+    terminalInspectorTab: "overview",
+    terminalBacktestState: null,
   };
 
   let renderState = {
@@ -164,6 +165,11 @@ import * as Engine from "./engine.js";
   const triggerLH = document.getElementById("triggerLH");
   const triggerLL = document.getElementById("triggerLL");
 
+  const termTriggerHH = document.getElementById("termTriggerHH");
+  const termTriggerHL = document.getElementById("termTriggerHL");
+  const termTriggerLH = document.getElementById("termTriggerLH");
+  const termTriggerLL = document.getElementById("termTriggerLL");
+
   const btnApplyParams = document.getElementById("btnApplyParams");
   const btnResetParams = document.getElementById("btnResetParams");
 
@@ -204,9 +210,17 @@ import * as Engine from "./engine.js";
 
   const termChartContainer = document.getElementById("termChartContainer");
   const termChartTitle = document.getElementById("termChartTitle");
+  
+  // Terminal Bottom Inspector Elements
+  const termTabInspectorOverview = document.getElementById("termTabInspectorOverview");
+  const termTabInspectorBacktest = document.getElementById("termTabInspectorBacktest");
   const termTabInspectorAnchors = document.getElementById("termTabInspectorAnchors");
   const termTabInspectorBars = document.getElementById("termTabInspectorBars");
-  const termTabInspectorBacktest = document.getElementById("termTabInspectorBacktest");
+  const termContentOverview = document.getElementById("termContentOverview");
+  const termContentTable = document.getElementById("termContentTable");
+  const termKpiTilesContainer = document.getElementById("termKpiTilesContainer");
+  const termEquityWrap = document.getElementById("termEquityWrap");
+  const termEquityCanvas = document.getElementById("termEquityCanvas");
   const termBacktestSummaryBar = document.getElementById("termBacktestSummaryBar");
   const termInspectorCount = document.getElementById("termInspectorCount");
   const termTableHead = document.getElementById("termTableHead");
@@ -280,7 +294,7 @@ import * as Engine from "./engine.js";
     if (termBtnCalculate) {
       termBtnCalculate.innerHTML = isLoading
         ? `<span class="hourglass-spinner">⏳</span> Hesaplanıyor…`
-        : "Hesapla & Grafiğe Uygula";
+        : "⚡ Hesapla ve Grafiğe Yansıt";
     }
   }
 
@@ -348,7 +362,8 @@ import * as Engine from "./engine.js";
 
       if (nauEquitiesGroup) {
         nauEquitiesGroup.innerHTML = "";
-        (cat.equities || HARDCODED_EQUITIES).forEach((eq) => {
+        const list = (cat.equities && cat.equities.length) ? cat.equities : HARDCODED_EQUITIES;
+        list.forEach((eq) => {
           const opt = document.createElement("option");
           opt.value = `nau:equity:${eq.symbol}`;
           const countStr = eq.total_bars != null ? ` (${Number(eq.total_bars).toLocaleString()} Bar)` : "";
@@ -361,7 +376,8 @@ import * as Engine from "./engine.js";
 
       if (nauBybitGroup) {
         nauBybitGroup.innerHTML = "";
-        (cat.bybit || HARDCODED_BYBIT).forEach((by) => {
+        const list = (cat.bybit && cat.bybit.length) ? cat.bybit : HARDCODED_BYBIT;
+        list.forEach((by) => {
           const opt = document.createElement("option");
           opt.value = `nau:bybit:${by.symbol}:${by.category || "linear"}`;
           opt.textContent = `${by.symbol} [${(by.category || "LINEAR").toUpperCase()}]`;
@@ -407,7 +423,170 @@ import * as Engine from "./engine.js";
   }
 
   // --------------------------------------------------------------------------
-  // 7. Kompakt Backtester Controller (with TradingView Lightweight Charts)
+  // 7. Generic Equity Curve Canvas Renderer (Supports both views)
+  // --------------------------------------------------------------------------
+  function drawGenericEquity(cv, wrap, equity, data, met, cap = 100000) {
+    if (!cv || !wrap || !equity || !equity.length) return;
+    const W = wrap.clientWidth;
+    const H = wrap.clientHeight;
+    if (W < 40 || H < 40) {
+      requestAnimationFrame(() => {
+        if (wrap.clientWidth >= 40 && wrap.clientHeight >= 40) {
+          drawGenericEquity(cv, wrap, equity, data, met, cap);
+        }
+      });
+      return;
+    }
+
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = W * dpr;
+    cv.height = H * dpr;
+    const g = cv.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const colors = getThemeColors();
+    g.fillStyle = colors.bgApp;
+    g.fillRect(0, 0, W, H);
+
+    // Buy & Hold Equity Series
+    const bhEquity = [];
+    if (data && data.length) {
+      const firstPrice = data[0].c || 1;
+      for (let i = 0; i < equity.length; i++) {
+        const dIdx = Math.min(i, data.length - 1);
+        const p = data[dIdx].c || firstPrice;
+        bhEquity.push(cap * (p / firstPrice));
+      }
+    }
+
+    const AX = 70, PT = 26, PB = 8, pw = W - AX, ph = H - PT - PB;
+    let lo = Infinity, hi = -Infinity;
+    for (const e of equity) {
+      if (e.v < lo) lo = e.v;
+      if (e.v > hi) hi = e.v;
+    }
+    for (const b of bhEquity) {
+      if (b < lo) lo = b;
+      if (b > hi) hi = b;
+    }
+
+    lo = Math.min(lo, cap);
+    hi = Math.max(hi, cap);
+    const pad = (hi - lo) * 0.1 || 1;
+    lo -= pad;
+    hi += pad;
+
+    const x = (i) => (i / Math.max(1, equity.length - 1)) * pw;
+    const y = (v) => PT + ph * (1 - (v - lo) / (hi - lo));
+    const font = getComputedStyle(htmlEl).fontFamily || "-apple-system, Segoe UI, sans-serif";
+
+    // Grid lines
+    g.font = `10px ${font}`;
+    g.textBaseline = "middle";
+    const span = hi - lo;
+    const step = span / 4;
+    for (let t = lo; t <= hi; t += step) {
+      const yy = y(t);
+      g.strokeStyle = colors.borderSubtle;
+      g.beginPath();
+      g.moveTo(0, yy);
+      g.lineTo(pw, yy);
+      g.stroke();
+
+      g.fillStyle = colors.textMuted;
+      g.textAlign = "left";
+      g.fillText(`$${Math.round(t).toLocaleString("en-US")}`, pw + 6, yy);
+    }
+
+    // Capital Baseline
+    g.strokeStyle = colors.textMuted;
+    g.setLineDash([4, 4]);
+    g.beginPath();
+    g.moveTo(0, y(cap));
+    g.lineTo(pw, y(cap));
+    g.stroke();
+    g.setLineDash([]);
+
+    // 1. Buy & Hold Benchmark Curve (Dashed Purple/Slate)
+    if (bhEquity.length > 1) {
+      g.strokeStyle = colors.benchmark;
+      g.setLineDash([3, 3]);
+      g.lineWidth = 1.4;
+      g.beginPath();
+      bhEquity.forEach((b, i) => { i ? g.lineTo(x(i), y(b)) : g.moveTo(x(i), y(b)); });
+      g.stroke();
+      g.setLineDash([]);
+      g.lineWidth = 1;
+    }
+
+    // 2. Strategy Equity Gradient & Line
+    const grad = g.createLinearGradient(0, PT, 0, PT + ph);
+    grad.addColorStop(0, "rgba(41, 98, 255, 0.28)");
+    grad.addColorStop(1, "rgba(41, 98, 255, 0)");
+    g.beginPath();
+    equity.forEach((e, i) => { i ? g.lineTo(x(i), y(e.v)) : g.moveTo(x(i), y(e.v)); });
+    g.lineTo(pw, PT + ph);
+    g.lineTo(0, PT + ph);
+    g.closePath();
+    g.fillStyle = grad;
+    g.fill();
+
+    g.beginPath();
+    equity.forEach((e, i) => { i ? g.lineTo(x(i), y(e.v)) : g.moveTo(x(i), y(e.v)); });
+    g.strokeStyle = colors.accent;
+    g.lineWidth = 1.8;
+    g.stroke();
+    g.lineWidth = 1;
+
+    // Header Legend
+    g.font = `700 11px ${font}`;
+    g.fillStyle = colors.textSecondary;
+    g.textAlign = "left";
+    g.textBaseline = "alphabetic";
+    g.fillText("Özkaynak:", 10, 16);
+
+    const last = equity[equity.length - 1].v;
+    g.fillStyle = last >= cap ? colors.bull : colors.bear;
+    g.fillText(fm(last - cap), 74, 16);
+
+    // Buy & Hold Legend
+    if (met && met.buyHold != null) {
+      g.fillStyle = colors.benchmark;
+      g.fillText(`Buy & Hold: ${fm(met.buyHold)} (${met.buyHoldPct >= 0 ? "+" : ""}${met.buyHoldPct.toFixed(1)}%)`, 160, 16);
+    }
+  }
+
+  function renderGenericKpiTiles(container, m) {
+    if (!container) return;
+    if (!m) {
+      container.innerHTML = `
+        <div style="grid-column: span 3; text-align: center; color: var(--text-muted); padding: 20px; font-size: 12px;">
+          <span class="hourglass-spinner">⏳</span> Metrikler hesaplanıyor…
+        </div>
+      `;
+      return;
+    }
+    const pos = "bull-text", neg = "bear-text";
+    const tiles = [
+      { l: "Net Kar", v: fm(m.net), s: `${m.netPct >= 0 ? "+" : ""}${m.netPct.toFixed(2)}%`, c: m.net >= 0 ? pos : neg },
+      { l: "Buy & Hold", v: fm(m.buyHold), s: `${m.buyHoldPct >= 0 ? "+" : ""}${m.buyHoldPct.toFixed(2)}%`, c: m.buyHold >= 0 ? pos : neg },
+      { l: "Toplam İşlem", v: String(m.total), s: `${m.wins} kazanç / ${m.losses} kayıp`, c: "" },
+      { l: "Kazanma Oranı", v: `${m.winRate.toFixed(1)}%`, s: "kapalı işlemler", c: m.winRate >= 50 ? pos : neg },
+      { l: "Profit Factor", v: isFinite(m.pf) ? m.pf.toFixed(2) : "∞", s: "brüt kar / brüt zarar", c: m.pf >= 1 ? pos : neg },
+      { l: "Maks. Düşüş", v: `−${m.mddPct.toFixed(2)}%`, s: fm(-m.mdd), c: neg },
+    ];
+
+    container.innerHTML = tiles.map((t) => `
+      <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;">
+        <div style="font-size: 9px; color: var(--text-muted); letter-spacing: 0.3px; text-transform: uppercase;">${t.l}</div>
+        <div style="font-size: 15px; font-weight: 700; font-family: var(--font-mono); margin-top: 3px;" class="${t.c}">${t.v}</div>
+        <div style="font-size: 9px; color: var(--text-muted); margin-top: 2px;">${t.s}</div>
+      </div>
+    `).join("");
+  }
+
+  // --------------------------------------------------------------------------
+  // 8. Kompakt Backtester Controller (with TradingView Lightweight Charts)
   // --------------------------------------------------------------------------
   function initHandoffLightweightChart() {
     const container = document.getElementById("handoffLwChartContainer");
@@ -526,7 +705,7 @@ import * as Engine from "./engine.js";
         candles: rawBars.map((b) => ({ time: Math.floor(b.t / 1000), open: b.o, high: b.h, low: b.l, close: b.c })),
         volumes: rawBars.map((b) => ({ time: Math.floor(b.t / 1000), value: b.v, color: b.c >= b.o ? "rgba(8,153,129,0.35)" : "rgba(242,54,69,0.35)" })),
         vwap_points: vw.filter(Boolean).map((w, i) => ({ time: Math.floor(rawBars[i].t / 1000), value: w.v, dir: w.aType === "L" ? 1 : -1, segment_id: w.aI })),
-        anchors: swings.map((sw) => ({ time: Math.floor(rawBars[sw.index].t / 1000), position: sw.type === "H" ? "aboveBar" : "belowBar", color: sw.type === "H" ? "#f23645" : "#089981", shape: sw.type === "H" ? "arrowDown" : "arrowUp", label: sw.label })),
+        anchors: swings.map((sw) => ({ time: Math.floor(rawBars[sw.i].t / 1000), position: sw.type === "H" ? "aboveBar" : "belowBar", color: sw.type === "H" ? "#f23645" : "#089981", shape: sw.type === "H" ? "arrowDown" : "arrowUp", label: sw.label })),
       };
     }
 
@@ -585,12 +764,12 @@ import * as Engine from "./engine.js";
     }
 
     renderHandoffLightweightChart(apiData, rawBars, bt.trades);
-    renderKpiTiles(met);
+    renderGenericKpiTiles(kpiTilesContainer, met);
     renderPerformanceSummary(met);
     renderTradesTable(bt.trades, rawBars);
     
     setTimeout(() => {
-      drawEquity();
+      drawGenericEquity(equityCanvas, equityWrap, bt.equity, rawBars, met, state.params.capital);
       resizeHandoffChart();
     }, 40);
 
@@ -709,173 +888,6 @@ import * as Engine from "./engine.js";
     handoffLwChart.timeScale().fitContent();
   }
 
-  function drawEquity() {
-    const cv = equityCanvas;
-    const { equity, data, met } = renderState;
-    if (!cv || !equity || !equity.length) return;
-
-    const wrap = equityWrap;
-    if (!wrap) return;
-    const W = wrap.clientWidth;
-    const H = wrap.clientHeight;
-    if (W < 40 || H < 40) {
-      requestAnimationFrame(() => {
-        if (equityWrap && equityWrap.clientWidth >= 40 && equityWrap.clientHeight >= 40) {
-          drawEquity();
-        }
-      });
-      return;
-    }
-
-    const dpr = window.devicePixelRatio || 1;
-    cv.width = W * dpr;
-    cv.height = H * dpr;
-    const g = cv.getContext("2d");
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    const colors = getThemeColors();
-    g.fillStyle = colors.bgApp;
-    g.fillRect(0, 0, W, H);
-
-    const cap = state.params.capital;
-
-    // Buy & Hold Equity Series
-    const bhEquity = [];
-    if (data && data.length) {
-      const firstPrice = data[0].c || 1;
-      for (let i = 0; i < equity.length; i++) {
-        const dIdx = Math.min(i, data.length - 1);
-        const p = data[dIdx].c || firstPrice;
-        bhEquity.push(cap * (p / firstPrice));
-      }
-    }
-
-    const AX = 70, PT = 26, PB = 8, pw = W - AX, ph = H - PT - PB;
-    let lo = Infinity, hi = -Infinity;
-    for (const e of equity) {
-      if (e.v < lo) lo = e.v;
-      if (e.v > hi) hi = e.v;
-    }
-    for (const b of bhEquity) {
-      if (b < lo) lo = b;
-      if (b > hi) hi = b;
-    }
-
-    lo = Math.min(lo, cap);
-    hi = Math.max(hi, cap);
-    const pad = (hi - lo) * 0.1 || 1;
-    lo -= pad;
-    hi += pad;
-
-    const x = (i) => (i / Math.max(1, equity.length - 1)) * pw;
-    const y = (v) => PT + ph * (1 - (v - lo) / (hi - lo));
-    const font = getComputedStyle(htmlEl).fontFamily || "-apple-system, Segoe UI, sans-serif";
-
-    // Grid lines
-    g.font = `10px ${font}`;
-    g.textBaseline = "middle";
-    const span = hi - lo;
-    const step = span / 4;
-    for (let t = lo; t <= hi; t += step) {
-      const yy = y(t);
-      g.strokeStyle = colors.borderSubtle;
-      g.beginPath();
-      g.moveTo(0, yy);
-      g.lineTo(pw, yy);
-      g.stroke();
-
-      g.fillStyle = colors.textMuted;
-      g.textAlign = "left";
-      g.fillText(`$${Math.round(t).toLocaleString("en-US")}`, pw + 6, yy);
-    }
-
-    // Capital Baseline
-    g.strokeStyle = colors.textMuted;
-    g.setLineDash([4, 4]);
-    g.beginPath();
-    g.moveTo(0, y(cap));
-    g.lineTo(pw, y(cap));
-    g.stroke();
-    g.setLineDash([]);
-
-    // 1. Buy & Hold Benchmark Curve (Dashed Purple/Slate)
-    if (bhEquity.length > 1) {
-      g.strokeStyle = colors.benchmark;
-      g.setLineDash([3, 3]);
-      g.lineWidth = 1.4;
-      g.beginPath();
-      bhEquity.forEach((b, i) => { i ? g.lineTo(x(i), y(b)) : g.moveTo(x(i), y(b)); });
-      g.stroke();
-      g.setLineDash([]);
-      g.lineWidth = 1;
-    }
-
-    // 2. Strategy Equity Gradient & Line
-    const grad = g.createLinearGradient(0, PT, 0, PT + ph);
-    grad.addColorStop(0, "rgba(41, 98, 255, 0.28)");
-    grad.addColorStop(1, "rgba(41, 98, 255, 0)");
-    g.beginPath();
-    equity.forEach((e, i) => { i ? g.lineTo(x(i), y(e.v)) : g.moveTo(x(i), y(e.v)); });
-    g.lineTo(pw, PT + ph);
-    g.lineTo(0, PT + ph);
-    g.closePath();
-    g.fillStyle = grad;
-    g.fill();
-
-    g.beginPath();
-    equity.forEach((e, i) => { i ? g.lineTo(x(i), y(e.v)) : g.moveTo(x(i), y(e.v)); });
-    g.strokeStyle = colors.accent;
-    g.lineWidth = 1.8;
-    g.stroke();
-    g.lineWidth = 1;
-
-    // Header Legend
-    g.font = `700 11px ${font}`;
-    g.fillStyle = colors.textSecondary;
-    g.textAlign = "left";
-    g.textBaseline = "alphabetic";
-    g.fillText("Özkaynak:", 10, 16);
-
-    const last = equity[equity.length - 1].v;
-    g.fillStyle = last >= cap ? colors.bull : colors.bear;
-    g.fillText(fm(last - cap), 74, 16);
-
-    // Buy & Hold Legend
-    if (met && met.buyHold != null) {
-      g.fillStyle = colors.benchmark;
-      g.fillText(`Buy & Hold: ${fm(met.buyHold)} (${met.buyHoldPct >= 0 ? "+" : ""}${met.buyHoldPct.toFixed(1)}%)`, 160, 16);
-    }
-  }
-
-  function renderKpiTiles(m) {
-    if (!kpiTilesContainer) return;
-    if (!m) {
-      kpiTilesContainer.innerHTML = `
-        <div style="grid-column: span 3; text-align: center; color: var(--text-muted); padding: 20px; font-size: 12px;">
-          <span class="hourglass-spinner">⏳</span> Metrikler hesaplanıyor…
-        </div>
-      `;
-      return;
-    }
-    const pos = "bull-text", neg = "bear-text";
-    const tiles = [
-      { l: "Net Kar", v: fm(m.net), s: `${m.netPct >= 0 ? "+" : ""}${m.netPct.toFixed(2)}%`, c: m.net >= 0 ? pos : neg },
-      { l: "Buy & Hold", v: fm(m.buyHold), s: `${m.buyHoldPct >= 0 ? "+" : ""}${m.buyHoldPct.toFixed(2)}%`, c: m.buyHold >= 0 ? pos : neg },
-      { l: "Toplam İşlem", v: String(m.total), s: `${m.wins} kazanç / ${m.losses} kayıp`, c: "" },
-      { l: "Kazanma Oranı", v: `${m.winRate.toFixed(1)}%`, s: "kapalı işlemler", c: m.winRate >= 50 ? pos : neg },
-      { l: "Profit Factor", v: isFinite(m.pf) ? m.pf.toFixed(2) : "∞", s: "brüt kar / brüt zarar", c: m.pf >= 1 ? pos : neg },
-      { l: "Maks. Düşüş", v: `−${m.mddPct.toFixed(2)}%`, s: fm(-m.mdd), c: neg },
-    ];
-
-    kpiTilesContainer.innerHTML = tiles.map((t) => `
-      <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;">
-        <div style="font-size: 9px; color: var(--text-muted); letter-spacing: 0.3px; text-transform: uppercase;">${t.l}</div>
-        <div style="font-size: 15px; font-weight: 700; font-family: var(--font-mono); margin-top: 3px;" class="${t.c}">${t.v}</div>
-        <div style="font-size: 9px; color: var(--text-muted); margin-top: 2px;">${t.s}</div>
-      </div>
-    `).join("");
-  }
-
   function renderPerformanceSummary(m) {
     if (!m || !perfGridContainer) return;
     const pos = "bull-text", neg = "bear-text";
@@ -941,7 +953,7 @@ import * as Engine from "./engine.js";
   }
 
   // --------------------------------------------------------------------------
-  // 8. Terminal Controller
+  // 9. Terminal Controller
   // --------------------------------------------------------------------------
   function initTerminalLightweightChart() {
     const container = document.getElementById("termChartContainer");
@@ -1124,13 +1136,72 @@ import * as Engine from "./engine.js";
     termKpiAnchor.textContent = m.last_anchor_label;
     termKpiAnchorPrice.textContent = `$${m.last_anchor_price.toLocaleString()}`;
 
+    // Compute Strategy Backtest for Terminal Overview & Trades
+    const rawBars = (data.candles || []).map((c, i) => ({
+      t: c.time * 1000,
+      o: c.open,
+      h: c.high,
+      l: c.low,
+      c: c.close,
+      v: data.volumes && data.volumes[i] ? data.volumes[i].value : 1000,
+    }));
+
+    const termParams = {
+      ...state.params,
+      triggers: {
+        HH: termTriggerHH ? termTriggerHH.checked : true,
+        HL: termTriggerHL ? termTriggerHL.checked : true,
+        LH: termTriggerLH ? termTriggerLH.checked : true,
+        LL: termTriggerLL ? termTriggerLL.checked : true,
+      },
+    };
+
+    const swings = Engine.computeSwings(rawBars, termParams.len);
+    const vw = Engine.computeVWAP(rawBars, swings, termParams.m1, termParams.m2);
+    const bt = Engine.backtest(rawBars, vw, termParams);
+    const met = Engine.metrics(bt.trades, bt.equity, termParams.capital, "1h", rawBars);
+
+    state.terminalBacktestState = {
+      rawBars,
+      swings,
+      vw,
+      trades: bt.trades,
+      equity: bt.equity,
+      met,
+    };
+
+    // Render Terminal Genel Bakış KPI Tiles & Equity Curve
+    renderGenericKpiTiles(termKpiTilesContainer, met);
+    setTimeout(() => {
+      drawGenericEquity(termEquityCanvas, termEquityWrap, bt.equity, rawBars, met, termParams.capital);
+    }, 30);
+
     renderTerminalInspectorTable(data);
   }
 
   function renderTerminalInspectorTable(data) {
     if (!termTableBody) return;
 
-    if (state.terminalInspectorTab === "anchors") {
+    if (state.terminalInspectorTab === "overview") {
+      if (termContentOverview) termContentOverview.style.display = "flex";
+      if (termContentTable) termContentTable.style.display = "none";
+      if (termInspectorCount) termInspectorCount.textContent = "Genel Bakış";
+      if (state.terminalBacktestState) {
+        renderGenericKpiTiles(termKpiTilesContainer, state.terminalBacktestState.met);
+        setTimeout(() => {
+          drawGenericEquity(
+            termEquityCanvas,
+            termEquityWrap,
+            state.terminalBacktestState.equity,
+            state.terminalBacktestState.rawBars,
+            state.terminalBacktestState.met,
+            state.params.capital
+          );
+        }, 30);
+      }
+    } else if (state.terminalInspectorTab === "anchors") {
+      if (termContentOverview) termContentOverview.style.display = "none";
+      if (termContentTable) termContentTable.style.display = "flex";
       if (termBacktestSummaryBar) termBacktestSummaryBar.style.display = "none";
       termTableHead.innerHTML = `
         <tr>
@@ -1157,6 +1228,8 @@ import * as Engine from "./engine.js";
         `;
       }).join("");
     } else if (state.terminalInspectorTab === "bars") {
+      if (termContentOverview) termContentOverview.style.display = "none";
+      if (termContentTable) termContentTable.style.display = "flex";
       if (termBacktestSummaryBar) termBacktestSummaryBar.style.display = "none";
       termTableHead.innerHTML = `
         <tr>
@@ -1181,19 +1254,15 @@ import * as Engine from "./engine.js";
         </tr>
       `).join("");
     } else if (state.terminalInspectorTab === "backtest") {
-      const rawBars = (data.candles || []).map((c, i) => ({
-        t: c.time * 1000,
-        o: c.open,
-        h: c.high,
-        l: c.low,
-        c: c.close,
-        v: data.volumes && data.volumes[i] ? data.volumes[i].value : 1000,
-      }));
+      if (termContentOverview) termContentOverview.style.display = "none";
+      if (termContentTable) termContentTable.style.display = "flex";
+      
+      const bs = state.terminalBacktestState;
+      if (!bs) return;
 
-      const swings = Engine.computeSwings(rawBars, state.params.len);
-      const vw = Engine.computeVWAP(rawBars, swings, state.params.m1, state.params.m2);
-      const bt = Engine.backtest(rawBars, vw, state.params);
-      const met = Engine.metrics(bt.trades, bt.equity, state.params.capital, "1h", rawBars);
+      const met = bs.met;
+      const trades = bs.trades;
+      const rawBars = bs.rawBars;
 
       if (termBacktestSummaryBar) {
         termBacktestSummaryBar.style.display = "flex";
@@ -1203,7 +1272,7 @@ import * as Engine from "./engine.js";
           <div><strong style="color:var(--text-muted)">Kazanma:</strong> <span style="font-weight:700">${met.winRate.toFixed(1)}%</span> (${met.wins}K / ${met.losses}Z)</div>
           <div><strong style="color:var(--text-muted)">Profit Factor:</strong> <span style="font-weight:700">${isFinite(met.pf) ? met.pf.toFixed(2) : '∞'}</span></div>
           <div><strong style="color:var(--text-muted)">Maks Düşüş:</strong> <span class="bear-text" style="font-weight:700">−${met.mddPct.toFixed(2)}%</span></div>
-          <div><strong style="color:var(--text-muted)">Toplam:</strong> <span style="font-weight:700">${bt.trades.length} İşlem</span></div>
+          <div><strong style="color:var(--text-muted)">Toplam:</strong> <span style="font-weight:700">${trades.length} İşlem</span></div>
         `;
       }
 
@@ -1221,10 +1290,10 @@ import * as Engine from "./engine.js";
           <th>Kümülatif ($)</th>
         </tr>
       `;
-      termInspectorCount.textContent = `${bt.trades.length} İşlem`;
+      termInspectorCount.textContent = `${trades.length} İşlem`;
 
       let cum = 0;
-      termTableBody.innerHTML = bt.trades.map((t, i) => {
+      termTableBody.innerHTML = trades.map((t, i) => {
         cum += t.pnl;
         const isLong = t.side === "L";
         const isWin = t.pnl >= 0;
@@ -1248,7 +1317,7 @@ import * as Engine from "./engine.js";
   }
 
   // --------------------------------------------------------------------------
-  // 9. Event Listeners & Binding
+  // 10. Event Listeners & Binding
   // --------------------------------------------------------------------------
   function setupEventListeners() {
     // 1. View Switcher
@@ -1276,7 +1345,17 @@ import * as Engine from "./engine.js";
           grid: { vertLines: { color: c.borderSubtle }, horzLines: { color: c.borderSubtle } },
         });
       }
-      drawEquity();
+      drawGenericEquity(equityCanvas, equityWrap, renderState.equity, renderState.data, renderState.met, state.params.capital);
+      if (state.terminalBacktestState) {
+        drawGenericEquity(
+          termEquityCanvas,
+          termEquityWrap,
+          state.terminalBacktestState.equity,
+          state.terminalBacktestState.rawBars,
+          state.terminalBacktestState.met,
+          state.params.capital
+        );
+      }
     });
 
     // 3. Handoff Top Toolbar & Date Filters (3 Yıl)
@@ -1343,7 +1422,9 @@ import * as Engine from "./engine.js";
         content.style.display = id === "perf" ? "block" : "flex";
         state.handoffTab = id;
         if (id === "overview") {
-          setTimeout(() => drawEquity(), 20);
+          setTimeout(() => {
+            drawGenericEquity(equityCanvas, equityWrap, renderState.equity, renderState.data, renderState.met, state.params.capital);
+          }, 20);
         }
       });
     });
@@ -1452,42 +1533,51 @@ import * as Engine from "./engine.js";
     termAptSlider.addEventListener("input", () => { termAptVal.textContent = termAptSlider.value; });
     termBtnCalculate.addEventListener("click", () => loadTerminalData());
 
-    termTabInspectorAnchors.addEventListener("click", () => {
-      termTabInspectorAnchors.classList.add("active");
-      termTabInspectorBars.classList.remove("active");
-      if (termTabInspectorBacktest) termTabInspectorBacktest.classList.remove("active");
-      state.terminalInspectorTab = "anchors";
-      if (state.terminalData) renderTerminalInspectorTable(state.terminalData);
-    });
+    // Terminal Bottom Inspector Tab Buttons
+    const termInspTabs = [
+      { btn: termTabInspectorOverview, id: "overview" },
+      { btn: termTabInspectorBacktest, id: "backtest" },
+      { btn: termTabInspectorAnchors, id: "anchors" },
+      { btn: termTabInspectorBars, id: "bars" },
+    ];
 
-    termTabInspectorBars.addEventListener("click", () => {
-      termTabInspectorBars.classList.add("active");
-      termTabInspectorAnchors.classList.remove("active");
-      if (termTabInspectorBacktest) termTabInspectorBacktest.classList.remove("active");
-      state.terminalInspectorTab = "bars";
-      if (state.terminalData) renderTerminalInspectorTable(state.terminalData);
-    });
-
-    if (termTabInspectorBacktest) {
-      termTabInspectorBacktest.addEventListener("click", () => {
-        termTabInspectorBacktest.classList.add("active");
-        termTabInspectorAnchors.classList.remove("active");
-        termTabInspectorBars.classList.remove("active");
-        state.terminalInspectorTab = "backtest";
+    termInspTabs.forEach(({ btn, id }) => {
+      if (!btn) return;
+      btn.addEventListener("click", () => {
+        termInspTabs.forEach((t) => {
+          if (t.btn) {
+            t.btn.classList.remove("active");
+            t.btn.style.color = "var(--text-muted)";
+          }
+        });
+        btn.classList.add("active");
+        btn.style.color = "var(--accent)";
+        state.terminalInspectorTab = id;
         if (state.terminalData) renderTerminalInspectorTable(state.terminalData);
       });
-    }
+    });
 
     const ro = new ResizeObserver(() => {
       resizeHandoffChart();
-      drawEquity();
+      drawGenericEquity(equityCanvas, equityWrap, renderState.equity, renderState.data, renderState.met, state.params.capital);
+      if (state.terminalBacktestState) {
+        drawGenericEquity(
+          termEquityCanvas,
+          termEquityWrap,
+          state.terminalBacktestState.equity,
+          state.terminalBacktestState.rawBars,
+          state.terminalBacktestState.met,
+          state.params.capital
+        );
+      }
     });
     ro.observe(chartWrap);
     ro.observe(equityWrap);
+    if (termEquityWrap) ro.observe(termEquityWrap);
   }
 
   // --------------------------------------------------------------------------
-  // 10. Bootstrap
+  // 11. Bootstrap
   // --------------------------------------------------------------------------
   async function init() {
     setupEventListeners();
