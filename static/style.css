@@ -1,5 +1,5 @@
 /* ==========================================================================
-   DSAVWAP (Zeiierman) — Modern Interactive Terminal Stylesheet
+   DSAVWAP (Zeiierman) — Modern Interactive Terminal & Backtest Stylesheet
    ========================================================================== */
 
 :root {
@@ -143,6 +143,42 @@ code, .font-mono, .metric-value, .pivot-price {
   color: var(--text-secondary);
 }
 
+/* MAIN MODE SWITCHER (CHART vs BACKTEST) */
+.main-mode-switcher {
+  display: flex;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  gap: 4px;
+}
+
+.mode-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.mode-btn:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-hover);
+}
+
+.mode-btn.active {
+  background-color: var(--accent-primary);
+  color: white;
+}
+
 .nav-center {
   display: flex;
   align-items: center;
@@ -278,7 +314,7 @@ code, .font-mono, .metric-value, .pivot-price {
   gap: 10px;
 }
 
-input[type="text"], select {
+input[type="text"], input[type="number"], select {
   width: 100%;
   height: 36px;
   background-color: var(--bg-input);
@@ -291,7 +327,7 @@ input[type="text"], select {
   transition: border-color 0.2s ease;
 }
 
-input[type="text"]:focus, select:focus {
+input[type="text"]:focus, input[type="number"]:focus, select:focus {
   outline: none;
   border-color: var(--accent-primary);
 }
@@ -571,7 +607,7 @@ input:checked + .slider.round:before {
 }
 
 .btn-sm { height: 32px; padding: 0 10px; font-size: 0.75rem; }
-.btn-xs { height: 36px; padding: 0 12px; font-size: 0.75rem; }
+.btn-xs { height: 32px; padding: 0 10px; font-size: 0.72rem; }
 .btn-lg { height: 42px; font-size: 0.9rem; }
 .btn-block { width: 100%; }
 
@@ -584,6 +620,17 @@ input:checked + .slider.round:before {
   background-color: var(--bg-app);
   padding: 16px;
   gap: 14px;
+}
+
+/* VIEW SCREENS */
+.view-screen {
+  display: none;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.view-screen.active {
+  display: flex;
 }
 
 /* METRICS ROW */
@@ -672,7 +719,7 @@ input:checked + .slider.round:before {
   border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
-  height: 520px;
+  height: 500px;
   box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
@@ -855,6 +902,25 @@ input:checked + .slider.round:before {
   background-color: var(--bg-hover);
 }
 
+.badge-trade {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.badge-trade.long {
+  background-color: var(--accent-bull-glow);
+  color: var(--accent-bull);
+  border: 1px solid var(--accent-bull);
+}
+
+.badge-trade.short {
+  background-color: var(--accent-bear-glow);
+  color: var(--accent-bear);
+  border: 1px solid var(--accent-bear);
+}
+
 .text-center { text-align: center; }
 .text-muted { color: var(--text-muted); }
 .text-bull { color: var(--accent-bull); font-weight: 600; }
@@ -862,6 +928,12 @@ input:checked + .slider.round:before {
 
 /* RESPONSIVE */
 @media (max-width: 992px) {
+  .navbar {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 10px;
+    gap: 10px;
+  }
   .workspace {
     flex-direction: column;
     overflow-y: auto;

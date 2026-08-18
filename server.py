@@ -1,5 +1,5 @@
 """
-FastAPI Server for Dynamic Swing Anchored VWAP Interactive Web Application.
+FastAPI Server for Dynamic Swing Anchored VWAP Interactive Web Application & Backtest Terminal.
 """
 
 from __future__ import annotations
@@ -18,12 +18,13 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from backtest_engine import run_dsavwap_backtest
 from dynamic_swing_anchored_vwap import (
     dynamic_swing_anchored_vwap,
     generate_synthetic_market_data,
 )
 
-app = FastAPI(title="Dynamic Swing Anchored VWAP Dashboard")
+app = FastAPI(title="Dynamic Swing Anchored VWAP Dashboard & Backtester")
 
 app.add_middleware(
     CORSMiddleware,
@@ -48,13 +49,34 @@ class CalculationRequest(BaseModel):
     use_synthetic: bool = False
 
 
+class BacktestRequest(BaseModel):
+    ticker: Optional[str] = "BTC-USD"
+    period: str = "1y"
+    interval: str = "1d"
+    swing_period: int = Field(default=50, ge=2)
+    base_apt: float = Field(default=20.0, ge=1.0)
+    use_adapt: bool = False
+    vol_bias: float = Field(default=10.0, ge=0.1)
+    use_synthetic: bool = False
+
+    # Strategy Parameters
+    strategy_type: str = "pivot_flip"  # "pivot_flip", "price_cross", "pullback_bounce"
+    trade_mode: str = "long_and_short"  # "long_and_short", "long_only", "short_only"
+    initial_capital: float = Field(default=10000.0, ge=100.0)
+    position_size_pct: float = Field(default=100.0, ge=1.0, le=100.0)
+    stop_loss_pct: Optional[float] = None
+    take_profit_pct: Optional[float] = None
+    trailing_stop_pct: Optional[float] = None
+    commission_pct: float = Field(default=0.05, ge=0.0)
+    pullback_threshold_pct: float = Field(default=1.0, ge=0.1)
+
+
 def _dataframe_to_chart_response(
     df: pd.DataFrame, out: pd.DataFrame, source_label: str
 ) -> Dict[str, Any]:
     """Convert calculated OHLCV and DSAVWAP DataFrame to frontend chart JSON."""
     col_map = {c.lower(): c for c in df.columns}
 
-    # Ensure timestamps are unix seconds
     timestamps = []
     for idx in df.index:
         if isinstance(idx, pd.Timestamp):
@@ -155,7 +177,6 @@ def _dataframe_to_chart_response(
                 }
             )
 
-    # Key Summary Metrics
     latest_close = float(close_arr[-1]) if n > 0 else 0.0
     latest_vwap = float(dsavwap_arr[-1]) if n > 0 and not np.isnan(dsavwap_arr[-1]) else 0.0
     latest_dir = int(dir_arr[-1]) if n > 0 else 1
@@ -200,59 +221,89 @@ def _dataframe_to_chart_response(
     }
 
 
+def _fetch_or_generate_df(
+    use_synthetic: bool, ticker: Optional[str], period: str, interval: str
+) -> tuple[pd.DataFrame, str]:
+    if use_synthetic:
+        df = generate_synthetic_market_data(n_bars=300, seed=42)
+        return df, "Synthetic Market Data (300 Bars)"
+
+    ticker_sym = (ticker or "BTC-USD").strip().upper()
+    try:
+        data = yf.download(
+            ticker_sym,
+            period=period,
+            interval=interval,
+            auto_adjust=True,
+            progress=False,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=400, detail=f"Yahoo Finance data fetch failed: {str(e)}"
+        )
+
+    if data is None or data.empty:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No data found for ticker '{ticker_sym}' (period={period}, interval={interval})",
+        )
+
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = [c[0] for c in data.columns]
+
+    col_map = {c.lower(): c for c in data.columns}
+    required = ["open", "high", "low", "close", "volume"]
+    for r in required:
+        if r not in col_map:
+            raise HTTPException(
+                status_code=400, detail=f"Ticker data missing column '{r}'"
+            )
+
+    df = pd.DataFrame(
+        {
+            "open": data[col_map["open"]],
+            "high": data[col_map["high"]],
+            "low": data[col_map["low"]],
+            "close": data[col_map["close"]],
+            "volume": data[col_map["volume"]],
+        },
+        index=data.index,
+    )
+    df.dropna(inplace=True)
+    return df, f"{ticker_sym} ({period}, {interval})"
+
+
 @app.post("/api/calculate")
 async def calculate_endpoint(req: CalculationRequest):
     """Fetch ticker or synthetic data and calculate DSAVWAP."""
     try:
-        if req.use_synthetic:
-            df = generate_synthetic_market_data(n_bars=300, seed=42)
-            source_label = "Synthetic Market Data (300 Bars)"
-        else:
-            ticker = (req.ticker or "BTC-USD").strip().upper()
-            try:
-                data = yf.download(
-                    ticker,
-                    period=req.period,
-                    interval=req.interval,
-                    auto_adjust=True,
-                    progress=False,
-                )
-            except Exception as e:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Yahoo Finance data fetch failed: {str(e)}",
-                )
+        df, source_label = _fetch_or_generate_df(
+            req.use_synthetic, req.ticker, req.period, req.interval
+        )
+        out = dynamic_swing_anchored_vwap(
+            df,
+            swing_period=req.swing_period,
+            base_apt=req.base_apt,
+            use_adapt=req.use_adapt,
+            vol_bias=req.vol_bias,
+        )
+        return _dataframe_to_chart_response(df, out, source_label)
 
-            if data is None or data.empty:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"No data found for ticker '{ticker}' (period={req.period}, interval={req.interval})",
-                )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Calculation error: {str(e)}"
+        )
 
-            if isinstance(data.columns, pd.MultiIndex):
-                data.columns = [c[0] for c in data.columns]
 
-            col_map = {c.lower(): c for c in data.columns}
-            required = ["open", "high", "low", "close", "volume"]
-            for r in required:
-                if r not in col_map:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Ticker data missing column '{r}'",
-                    )
-
-            df = pd.DataFrame(
-                {
-                    "open": data[col_map["open"]],
-                    "high": data[col_map["high"]],
-                    "low": data[col_map["low"]],
-                    "close": data[col_map["close"]],
-                    "volume": data[col_map["volume"]],
-                },
-                index=data.index,
-            )
-            df.dropna(inplace=True)
-            source_label = f"{ticker} ({req.period}, {req.interval})"
+@app.post("/api/backtest")
+async def backtest_endpoint(req: BacktestRequest):
+    """Run full strategy backtest on ticker or synthetic data."""
+    try:
+        df, source_label = _fetch_or_generate_df(
+            req.use_synthetic, req.ticker, req.period, req.interval
+        )
 
         out = dynamic_swing_anchored_vwap(
             df,
@@ -262,13 +313,34 @@ async def calculate_endpoint(req: CalculationRequest):
             vol_bias=req.vol_bias,
         )
 
-        return _dataframe_to_chart_response(df, out, source_label)
+        # Run Backtest simulation
+        bt_result = run_dsavwap_backtest(
+            df=df,
+            out=out,
+            strategy_type=req.strategy_type,
+            trade_mode=req.trade_mode,
+            initial_capital=req.initial_capital,
+            position_size_pct=req.position_size_pct,
+            stop_loss_pct=req.stop_loss_pct,
+            take_profit_pct=req.take_profit_pct,
+            trailing_stop_pct=req.trailing_stop_pct,
+            commission_pct=req.commission_pct,
+            pullback_threshold_pct=req.pullback_threshold_pct,
+        )
+
+        chart_data = _dataframe_to_chart_response(df, out, source_label)
+
+        return {
+            "source": source_label,
+            "chart": chart_data,
+            "backtest": bt_result.to_dict(),
+        }
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Calculation error: {str(e)}"
+            status_code=500, detail=f"Backtest error: {str(e)}"
         )
 
 
@@ -331,7 +403,6 @@ async def health():
     return {"status": "ok", "indicator": "Dynamic Swing Anchored VWAP (Zeiierman)"}
 
 
-# Mount static directory to serve HTML/CSS/JS
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
 

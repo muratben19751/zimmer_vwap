@@ -1,5 +1,5 @@
 /* ==========================================================================
-   DSAVWAP (Zeiierman) — Interactive Frontend Application Logic
+   DSAVWAP (Zeiierman) — Interactive Frontend & Backtest Application Logic
    ========================================================================== */
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -13,16 +13,34 @@ document.addEventListener("DOMContentLoaded", () => {
   let candleSeries = null;
   let volumeSeries = null;
   let vwapSeriesMap = new Map(); // segment_id -> lineSeries
+
+  let equityChart = null;
+  let equitySeries = null;
+  let benchmarkSeries = null;
+
+  let currentMode = "chart"; // "chart" or "backtest"
+  let currentTab = "tab-ticker"; // "tab-ticker", "tab-csv", "tab-synthetic"
   let currentData = null;
-  let currentTab = "tab-ticker";
+  let currentBacktestData = null;
   let uploadedFile = null;
 
   // DOM Elements
   const container = document.getElementById("tvChartContainer");
+  const equityContainer = document.getElementById("tvEquityChartContainer");
   const chartLoader = document.getElementById("chartLoader");
+  const btChartLoader = document.getElementById("btChartLoader");
   const chartHeaderTitle = document.getElementById("chartHeaderTitle");
+  const btEquityChartTitle = document.getElementById("btEquityChartTitle");
   const currentTickerName = document.getElementById("currentTickerName");
   const currentTickerResolution = document.getElementById("currentTickerResolution");
+
+  // Mode Switcher
+  const btnModeChart = document.getElementById("btnModeChart");
+  const btnModeBacktest = document.getElementById("btnModeBacktest");
+  const viewChart = document.getElementById("viewChart");
+  const viewBacktest = document.getElementById("viewBacktest");
+  const backtestSettingsGroup = document.getElementById("backtestSettingsGroup");
+  const btnRecalculateText = document.getElementById("btnRecalculateText");
 
   // Inputs
   const tickerInput = document.getElementById("tickerInput");
@@ -37,14 +55,25 @@ document.addEventListener("DOMContentLoaded", () => {
   const valVolBias = document.getElementById("valVolBias");
   const volBiasGroup = document.getElementById("volBiasGroup");
 
+  // Backtest Inputs
+  const btStrategyType = document.getElementById("btStrategyType");
+  const btTradeMode = document.getElementById("btTradeMode");
+  const btInitialCapital = document.getElementById("btInitialCapital");
+  const btCommission = document.getElementById("btCommission");
+  const btStopLoss = document.getElementById("btStopLoss");
+  const btTakeProfit = document.getElementById("btTakeProfit");
+  const btTrailingStop = document.getElementById("btTrailingStop");
+
   // Buttons
   const btnRecalculate = document.getElementById("btnRecalculate");
   const btnSearchTicker = document.getElementById("btnSearchTicker");
   const btnGenerateSynthetic = document.getElementById("btnGenerateSynthetic");
   const btnExportCsv = document.getElementById("btnExportCsv");
+  const btnExportTradesCsv = document.getElementById("btnExportTradesCsv");
   const btnThemeToggle = document.getElementById("btnThemeToggle");
   const themeIcon = document.getElementById("themeIcon");
   const btnResetZoom = document.getElementById("btnResetZoom");
+  const btnResetEquityZoom = document.getElementById("btnResetEquityZoom");
 
   // CSV
   const csvDropzone = document.getElementById("csvDropzone");
@@ -52,7 +81,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnSelectFile = document.getElementById("btnSelectFile");
   const selectedFileName = document.getElementById("selectedFileName");
 
-  // Metrics
+  // Chart Metrics
   const metricPrice = document.getElementById("metricPrice");
   const metricPriceChange = document.getElementById("metricPriceChange");
   const metricVwap = document.getElementById("metricVwap");
@@ -64,29 +93,45 @@ document.addEventListener("DOMContentLoaded", () => {
   const metricTotalSegments = document.getElementById("metricTotalSegments");
   const metricApt = document.getElementById("metricApt");
 
+  // Backtest Metrics
+  const btNetProfit = document.getElementById("btNetProfit");
+  const btBenchmarkReturn = document.getElementById("btBenchmarkReturn");
+  const btWinRate = document.getElementById("btWinRate");
+  const btTradesCount = document.getElementById("btTradesCount");
+  const btProfitFactor = document.getElementById("btProfitFactor");
+  const btWinLossRatio = document.getElementById("btWinLossRatio");
+  const btMaxDrawdown = document.getElementById("btMaxDrawdown");
+  const btMaxDrawdownUsd = document.getElementById("btMaxDrawdownUsd");
+  const btSharpeSortino = document.getElementById("btSharpeSortino");
+  const btAvgTrade = document.getElementById("btAvgTrade");
+
   // Tables
   const countAnchors = document.getElementById("countAnchors");
+  const countTrades = document.getElementById("countTrades");
   const anchorsTableBody = document.getElementById("anchorsTableBody");
   const barsTableBody = document.getElementById("barsTableBody");
+  const tradesTableBody = document.getElementById("tradesTableBody");
 
   // --------------------------------------------------------------------------
-  // 1. Chart Initialization (TradingView Lightweight Charts)
+  // 1. Chart Initializations
   // --------------------------------------------------------------------------
+  function getThemeColors() {
+    const isDark = document.documentElement.getAttribute("data-theme") !== "light";
+    return {
+      bg: isDark ? "#161b22" : "#ffffff",
+      textColor: isDark ? "#8b949e" : "#57606a",
+      gridColor: isDark ? "#21262d" : "#edf0f2",
+    };
+  }
+
   function initChart() {
-    if (!window.LightweightCharts) {
-      console.error("LightweightCharts library not loaded");
-      return;
-    }
-
+    if (!window.LightweightCharts) return;
     if (chart) {
       chart.remove();
       chart = null;
     }
 
-    const isDark = document.documentElement.getAttribute("data-theme") !== "light";
-    const bg = isDark ? "#161b22" : "#ffffff";
-    const textColor = isDark ? "#8b949e" : "#57606a";
-    const gridColor = isDark ? "#21262d" : "#edf0f2";
+    const { bg, textColor, gridColor } = getThemeColors();
 
     chart = window.LightweightCharts.createChart(container, {
       width: container.clientWidth,
@@ -105,10 +150,7 @@ document.addEventListener("DOMContentLoaded", () => {
       },
       rightPriceScale: {
         borderColor: gridColor,
-        scaleMargins: {
-          top: 0.1,
-          bottom: 0.25,
-        },
+        scaleMargins: { top: 0.1, bottom: 0.25 },
       },
       timeScale: {
         borderColor: gridColor,
@@ -117,7 +159,6 @@ document.addEventListener("DOMContentLoaded", () => {
       },
     });
 
-    // Candlestick Series
     candleSeries = chart.addCandlestickSeries({
       upColor: "#089981",
       downColor: "#f23645",
@@ -126,41 +167,95 @@ document.addEventListener("DOMContentLoaded", () => {
       wickDownColor: "#f23645",
     });
 
-    // Volume Series (Overlay at bottom)
     volumeSeries = chart.addHistogramSeries({
       color: "#26a69a",
-      priceFormat: {
-        type: "volume",
-      },
+      priceFormat: { type: "volume" },
       priceScaleId: "volume",
     });
 
     chart.priceScale("volume").applyOptions({
-      scaleMargins: {
-        top: 0.8,
-        bottom: 0,
-      },
+      scaleMargins: { top: 0.8, bottom: 0 },
     });
 
     vwapSeriesMap.clear();
+  }
 
-    // Auto resize
-    window.addEventListener("resize", handleResize);
+  function initEquityChart() {
+    if (!window.LightweightCharts || !equityContainer) return;
+    if (equityChart) {
+      equityChart.remove();
+      equityChart = null;
+    }
+
+    const { bg, textColor, gridColor } = getThemeColors();
+
+    equityChart = window.LightweightCharts.createChart(equityContainer, {
+      width: equityContainer.clientWidth,
+      height: equityContainer.clientHeight,
+      layout: {
+        background: { color: bg },
+        textColor: textColor,
+        fontFamily: "'Inter', sans-serif",
+      },
+      grid: {
+        vertLines: { color: gridColor },
+        horzLines: { color: gridColor },
+      },
+      crosshair: {
+        mode: window.LightweightCharts.CrosshairMode.Normal,
+      },
+      rightPriceScale: {
+        borderColor: gridColor,
+        scaleMargins: { top: 0.15, bottom: 0.15 },
+      },
+      timeScale: {
+        borderColor: gridColor,
+        timeVisible: true,
+        secondsVisible: false,
+      },
+    });
+
+    // Equity curve (Green area)
+    equitySeries = equityChart.addAreaSeries({
+      topColor: "rgba(8, 153, 129, 0.4)",
+      bottomColor: "rgba(8, 153, 129, 0.0)",
+      lineColor: "#089981",
+      lineWidth: 2.5,
+      priceLineVisible: true,
+    });
+
+    // Benchmark curve (Blue line)
+    benchmarkSeries = equityChart.addLineSeries({
+      color: "#2962ff",
+      lineWidth: 2,
+      lineStyle: window.LightweightCharts.LineStyle.Dotted,
+      priceLineVisible: false,
+    });
   }
 
   function handleResize() {
     if (chart && container) {
-      chart.applyOptions({
-        width: container.clientWidth,
-        height: container.clientHeight,
-      });
+      chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
+    }
+    if (equityChart && equityContainer) {
+      equityChart.applyOptions({ width: equityContainer.clientWidth, height: equityContainer.clientHeight });
     }
   }
 
+  window.addEventListener("resize", handleResize);
+
   // --------------------------------------------------------------------------
-  // 2. Data Fetching & Rendering
+  // 2. Data Fetching & Execution
   // --------------------------------------------------------------------------
-  async function loadData() {
+  async function executeAction() {
+    if (currentMode === "backtest") {
+      await runBacktest();
+    } else {
+      await loadChartData();
+    }
+  }
+
+  async function loadChartData() {
     chartLoader.classList.add("active");
 
     const payload = {
@@ -180,10 +275,7 @@ document.addEventListener("DOMContentLoaded", () => {
         formData.append("use_adapt", payload.use_adapt);
         formData.append("vol_bias", payload.vol_bias);
 
-        res = await fetch("/api/upload", {
-          method: "POST",
-          body: formData,
-        });
+        res = await fetch("/api/upload", { method: "POST", body: formData });
       } else if (currentTab === "tab-synthetic") {
         payload.use_synthetic = true;
         res = await fetch("/api/calculate", {
@@ -211,7 +303,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const data = await res.json();
       currentData = data;
-      renderDashboard(data);
+      renderChartDashboard(data);
 
     } catch (err) {
       alert("Hata: " + err.message);
@@ -221,40 +313,84 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function renderDashboard(data) {
+  async function runBacktest() {
+    btChartLoader.classList.add("active");
+
+    const payload = {
+      swing_period: parseInt(swingPeriodRange.value),
+      base_apt: parseFloat(baseAptRange.value),
+      use_adapt: useAdaptToggle.checked,
+      vol_bias: parseFloat(volBiasRange.value),
+      strategy_type: btStrategyType.value,
+      trade_mode: btTradeMode.value,
+      initial_capital: parseFloat(btInitialCapital.value) || 10000.0,
+      position_size_pct: 100.0,
+      stop_loss_pct: btStopLoss.value ? parseFloat(btStopLoss.value) : null,
+      take_profit_pct: btTakeProfit.value ? parseFloat(btTakeProfit.value) : null,
+      trailing_stop_pct: btTrailingStop.value ? parseFloat(btTrailingStop.value) : null,
+      commission_pct: parseFloat(btCommission.value) || 0.05,
+      pullback_threshold_pct: 1.0,
+    };
+
+    if (currentTab === "tab-synthetic") {
+      payload.use_synthetic = true;
+    } else {
+      payload.ticker = tickerInput.value.trim() || "BTC-USD";
+      payload.period = periodSelect.value;
+      payload.interval = intervalSelect.value;
+      payload.use_synthetic = false;
+    }
+
+    try {
+      const res = await fetch("/api/backtest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Backtest çalıştırılırken hata oluştu");
+      }
+
+      const data = await res.json();
+      currentBacktestData = data;
+      renderBacktestDashboard(data);
+
+    } catch (err) {
+      alert("Backtest Hatası: " + err.message);
+      console.error(err);
+    } finally {
+      btChartLoader.classList.remove("active");
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // 3. Render Functions
+  // --------------------------------------------------------------------------
+  function renderChartDashboard(data) {
     if (!chart) initChart();
 
-    // 1. Update Header & Titles
     chartHeaderTitle.textContent = `${data.source} — Dynamic Swing Anchored VWAP`;
     currentTickerName.textContent = (currentTab === "tab-ticker" ? tickerInput.value.toUpperCase() : (currentTab === "tab-csv" ? "CSV" : "Simülasyon"));
     currentTickerResolution.textContent = `${periodSelect.value} · ${intervalSelect.value}`;
 
-    // 2. Set Candles & Volume
     candleSeries.setData(data.candles);
     volumeSeries.setData(data.volumes);
 
-    // 3. Clear old VWAP line series
     for (const [, s] of vwapSeriesMap) {
       chart.removeSeries(s);
     }
     vwapSeriesMap.clear();
 
-    // Group VWAP points by segment_id
     const segmentMap = new Map();
     for (const pt of data.vwap_points) {
       if (!segmentMap.has(pt.segment_id)) {
-        segmentMap.set(pt.segment_id, {
-          dir: pt.dir,
-          points: [],
-        });
+        segmentMap.set(pt.segment_id, { dir: pt.dir, points: [] });
       }
-      segmentMap.get(pt.segment_id).points.push({
-        time: pt.time,
-        value: pt.value,
-      });
+      segmentMap.get(pt.segment_id).points.push({ time: pt.time, value: pt.value });
     }
 
-    // Create line series for each segment with appropriate color
     for (const [segId, seg] of segmentMap) {
       const color = seg.dir > 0 ? "#089981" : "#f23645";
       const lineSeries = chart.addLineSeries({
@@ -268,7 +404,6 @@ document.addEventListener("DOMContentLoaded", () => {
       vwapSeriesMap.set(segId, lineSeries);
     }
 
-    // 4. Set Markers (Swing Labels HH, HL, LH, LL)
     const markers = data.anchors.map((a) => ({
       time: a.time,
       position: a.position,
@@ -281,7 +416,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     chart.timeScale().fitContent();
 
-    // 5. Update Metrics Cards
+    // Metrics
     const m = data.metrics;
     metricPrice.textContent = `$${m.latest_close.toLocaleString()}`;
     metricPriceChange.textContent = `${m.price_change_pct >= 0 ? "+" : ""}${m.price_change_pct}%`;
@@ -301,10 +436,49 @@ document.addEventListener("DOMContentLoaded", () => {
     metricTotalSegments.textContent = `Toplam Segment: ${m.total_segments}`;
     metricApt.textContent = `${m.current_apt} bar`;
 
-    // 6. Populate Tables
     countAnchors.textContent = data.anchors.length;
     renderAnchorsTable(data.anchors);
     renderBarsTable(data);
+  }
+
+  function renderBacktestDashboard(data) {
+    if (!equityChart) initEquityChart();
+
+    const bt = data.backtest;
+    btEquityChartTitle.textContent = `${data.source} — Equity Curve vs Buy & Hold (${bt.total_trades} İşlem)`;
+    currentTickerName.textContent = (currentTab === "tab-ticker" ? tickerInput.value.toUpperCase() : (currentTab === "tab-csv" ? "CSV" : "Simülasyon"));
+    currentTickerResolution.textContent = `${periodSelect.value} · ${intervalSelect.value}`;
+
+    // KPI Cards
+    const isProfit = bt.net_profit >= 0;
+    btNetProfit.textContent = `$${bt.net_profit.toLocaleString()} (${isProfit ? "+" : ""}${bt.net_profit_pct}%)`;
+    btNetProfit.className = `metric-value font-mono ${isProfit ? "text-bull" : "text-bear"}`;
+    btBenchmarkReturn.textContent = `Buy & Hold: ${bt.benchmark_return_pct >= 0 ? "+" : ""}${bt.benchmark_return_pct}%`;
+
+    btWinRate.textContent = `${bt.win_rate_pct}%`;
+    btWinRate.className = `metric-value font-mono ${bt.win_rate_pct >= 50 ? "text-bull" : "text-bear"}`;
+    btTradesCount.textContent = `${bt.winning_trades} Kazanan / ${bt.losing_trades} Kaybeden (${bt.total_trades} Toplam)`;
+
+    btProfitFactor.textContent = bt.profit_factor >= 999 ? "∞" : bt.profit_factor.toFixed(2);
+    btWinLossRatio.textContent = `Kazanç/Kayıp Oranı: ${bt.win_loss_ratio.toFixed(2)}`;
+
+    btMaxDrawdown.textContent = `-${bt.max_drawdown_pct}%`;
+    btMaxDrawdownUsd.textContent = `Düşüş Tutarı: -$${bt.max_drawdown_usd.toLocaleString()}`;
+
+    btSharpeSortino.textContent = `${bt.sharpe_ratio.toFixed(2)} / ${bt.sortino_ratio.toFixed(2)}`;
+    btAvgTrade.textContent = `Ort. İşlem: ${bt.avg_trade_pnl_pct >= 0 ? "+" : ""}${bt.avg_trade_pnl_pct}%`;
+
+    // Equity Curve Chart
+    const eqData = bt.equity_curve.map((e) => ({ time: e.time, value: e.equity }));
+    const benchData = bt.equity_curve.map((e) => ({ time: e.time, value: e.benchmark }));
+
+    equitySeries.setData(eqData);
+    benchmarkSeries.setData(benchData);
+    equityChart.timeScale().fitContent();
+
+    // Trade Log Table
+    countTrades.textContent = bt.trades.length;
+    renderTradesTable(bt.trades);
   }
 
   function renderAnchorsTable(anchors) {
@@ -341,7 +515,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const candles = data.candles || [];
     const vwaps = data.vwap_points || [];
     const vwapLookup = new Map(vwaps.map((v) => [v.time, v]));
-
     const recentCandles = candles.slice(-50).reverse();
 
     barsTableBody.innerHTML = recentCandles
@@ -371,9 +544,75 @@ document.addEventListener("DOMContentLoaded", () => {
       .join("");
   }
 
+  function renderTradesTable(trades) {
+    if (!trades || trades.length === 0) {
+      tradesTableBody.innerHTML = '<tr><td colspan="12" class="text-center text-muted">İşlem gerçekleşmedi.</td></tr>';
+      return;
+    }
+
+    tradesTableBody.innerHTML = trades
+      .map((t) => {
+        const entryStr = new Date(t.entry_time * 1000).toLocaleDateString("tr-TR");
+        const exitStr = new Date(t.exit_time * 1000).toLocaleDateString("tr-TR");
+        const isWin = t.pnl > 0;
+        const dirBadge = t.direction === "LONG" ? '<span class="badge-trade long">LONG</span>' : '<span class="badge-trade short">SHORT</span>';
+        const pnlClass = isWin ? "text-bull" : "text-bear";
+
+        return `
+          <tr>
+            <td>${t.trade_id}</td>
+            <td>${entryStr}</td>
+            <td>${exitStr}</td>
+            <td>${dirBadge}</td>
+            <td>$${t.entry_price.toLocaleString()}</td>
+            <td>$${t.exit_price.toLocaleString()}</td>
+            <td>${t.size}</td>
+            <td class="${pnlClass}">$${t.pnl >= 0 ? "+" : ""}${t.pnl.toLocaleString()}</td>
+            <td class="${pnlClass}">${t.pnl_pct >= 0 ? "+" : ""}${t.pnl_pct}%</td>
+            <td>$${t.commission}</td>
+            <td><span class="badge-mini" style="background: var(--bg-hover); color: var(--text-secondary);">${t.exit_reason}</span></td>
+            <td>${t.bars_held}</td>
+          </tr>
+        `;
+      })
+      .reverse()
+      .join("");
+  }
+
   // --------------------------------------------------------------------------
-  // 3. Event Listeners & Controls
+  // 4. Mode Switcher & Event Listeners
   // --------------------------------------------------------------------------
+  btnModeChart.addEventListener("click", () => {
+    currentMode = "chart";
+    btnModeChart.classList.add("active");
+    btnModeBacktest.classList.remove("active");
+    viewChart.classList.add("active");
+    viewBacktest.classList.remove("active");
+    backtestSettingsGroup.style.display = "none";
+    btnRecalculateText.textContent = "Hesapla ve Güncelle";
+
+    setTimeout(() => {
+      if (!chart) initChart();
+      if (currentData) renderChartDashboard(currentData);
+      else loadChartData();
+    }, 50);
+  });
+
+  btnModeBacktest.addEventListener("click", () => {
+    currentMode = "backtest";
+    btnModeBacktest.classList.add("active");
+    btnModeChart.classList.remove("active");
+    viewBacktest.classList.add("active");
+    viewChart.classList.remove("active");
+    backtestSettingsGroup.style.display = "block";
+    btnRecalculateText.textContent = "Backtest'i Başlat";
+
+    setTimeout(() => {
+      if (!equityChart) initEquityChart();
+      if (currentBacktestData) renderBacktestDashboard(currentBacktestData);
+      else runBacktest();
+    }, 50);
+  });
 
   // Sliders binding
   swingPeriodRange.addEventListener("input", () => {
@@ -416,23 +655,23 @@ document.addEventListener("DOMContentLoaded", () => {
       document.querySelectorAll(".quick-chips .chip").forEach((c) => c.classList.remove("active"));
       chip.classList.add("active");
       tickerInput.value = chip.dataset.symbol;
-      loadData();
+      executeAction();
     });
   });
 
   // Search & Recalculate
-  btnSearchTicker.addEventListener("click", loadData);
-  btnRecalculate.addEventListener("click", loadData);
+  btnSearchTicker.addEventListener("click", executeAction);
+  btnRecalculate.addEventListener("click", executeAction);
   tickerInput.addEventListener("keypress", (e) => {
-    if (e.key === "Enter") loadData();
+    if (e.key === "Enter") executeAction();
   });
 
-  periodSelect.addEventListener("change", loadData);
-  intervalSelect.addEventListener("change", loadData);
+  periodSelect.addEventListener("change", executeAction);
+  intervalSelect.addEventListener("change", executeAction);
 
   btnGenerateSynthetic.addEventListener("click", () => {
     currentTab = "tab-synthetic";
-    loadData();
+    executeAction();
   });
 
   // CSV Drag and Drop
@@ -446,7 +685,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.target.files.length > 0) {
       uploadedFile = e.target.files[0];
       selectedFileName.textContent = `Seçilen: ${uploadedFile.name}`;
-      loadData();
+      executeAction();
     }
   });
 
@@ -465,13 +704,14 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.dataTransfer.files.length > 0) {
       uploadedFile = e.dataTransfer.files[0];
       selectedFileName.textContent = `Seçilen: ${uploadedFile.name}`;
-      loadData();
+      executeAction();
     }
   });
 
   // Inspector Tabs (Bottom)
   document.querySelectorAll(".inspector-tabs .insp-tab").forEach((tab) => {
     tab.addEventListener("click", () => {
+      if (!tab.dataset.target) return;
       document.querySelectorAll(".inspector-tabs .insp-tab").forEach((t) => t.classList.remove("active"));
       document.querySelectorAll(".insp-pane").forEach((p) => p.classList.remove("active"));
 
@@ -485,6 +725,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (chart) chart.timeScale().fitContent();
   });
 
+  if (btnResetEquityZoom) {
+    btnResetEquityZoom.addEventListener("click", () => {
+      if (equityChart) equityChart.timeScale().fitContent();
+    });
+  }
+
   // Theme Toggle
   btnThemeToggle.addEventListener("click", () => {
     const currentTheme = document.documentElement.getAttribute("data-theme");
@@ -496,19 +742,20 @@ document.addEventListener("DOMContentLoaded", () => {
       if (window.lucide) window.lucide.createIcons();
     }
 
-    if (chart) {
-      const isDark = nextTheme !== "light";
-      chart.applyOptions({
-        layout: {
-          background: { color: isDark ? "#161b22" : "#ffffff" },
-          textColor: isDark ? "#8b949e" : "#57606a",
-        },
-        grid: {
-          vertLines: { color: isDark ? "#21262d" : "#edf0f2" },
-          horzLines: { color: isDark ? "#21262d" : "#edf0f2" },
-        },
-      });
-    }
+    const isDark = nextTheme !== "light";
+    const colors = {
+      layout: {
+        background: { color: isDark ? "#161b22" : "#ffffff" },
+        textColor: isDark ? "#8b949e" : "#57606a",
+      },
+      grid: {
+        vertLines: { color: isDark ? "#21262d" : "#edf0f2" },
+        horzLines: { color: isDark ? "#21262d" : "#edf0f2" },
+      },
+    };
+
+    if (chart) chart.applyOptions(colors);
+    if (equityChart) equityChart.applyOptions(colors);
   });
 
   // Export CSV
@@ -547,7 +794,35 @@ document.addEventListener("DOMContentLoaded", () => {
     document.body.removeChild(link);
   });
 
+  // Export Trades CSV
+  if (btnExportTradesCsv) {
+    btnExportTradesCsv.addEventListener("click", () => {
+      if (!currentBacktestData || !currentBacktestData.backtest || !currentBacktestData.backtest.trades) {
+        alert("Henüz dışa aktarılacak backtest işlemi yok");
+        return;
+      }
+
+      const trades = currentBacktestData.backtest.trades;
+      let csvContent = "trade_id,entry_time,exit_time,direction,entry_price,exit_price,size,pnl_usd,pnl_pct,commission,exit_reason,bars_held\n";
+
+      for (const t of trades) {
+        const entryStr = new Date(t.entry_time * 1000).toISOString();
+        const exitStr = new Date(t.exit_time * 1000).toISOString();
+        csvContent += `${t.trade_id},${entryStr},${exitStr},${t.direction},${t.entry_price},${t.exit_price},${t.size},${t.pnl},${t.pnl_pct},${t.commission},${t.exit_reason},${t.bars_held}\n`;
+      }
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `dsavwap_backtest_trades_${currentTickerName.textContent.toLowerCase()}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    });
+  }
+
   // Initial Load
   initChart();
-  loadData();
+  loadChartData();
 });

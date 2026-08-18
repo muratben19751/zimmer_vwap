@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dynamic Swing Anchored VWAP (Zeiierman) — Interactive Terminal</title>
+  <title>Dynamic Swing Anchored VWAP (Zeiierman) — Interactive Terminal & Backtester</title>
   
   <!-- Google Fonts: Inter & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -29,8 +29,20 @@
         </div>
         <div class="brand-text">
           <div class="brand-title">DSAVWAP <span class="badge-pro">Zeiierman</span></div>
-          <div class="brand-subtitle">Dynamic Swing Anchored VWAP Terminal</div>
+          <div class="brand-subtitle">Dynamic Swing Anchored VWAP & Backtest Terminal</div>
         </div>
+      </div>
+
+      <!-- Mode Switcher (Chart Analysis vs Strategy Backtester) -->
+      <div class="main-mode-switcher">
+        <button class="mode-btn active" id="btnModeChart" data-mode="chart">
+          <i data-lucide="line-chart"></i>
+          <span>Grafik & Analiz</span>
+        </button>
+        <button class="mode-btn" id="btnModeBacktest" data-mode="backtest">
+          <i data-lucide="bar-chart-2"></i>
+          <span>Strateji Backtesti</span>
+        </button>
       </div>
 
       <div class="nav-center">
@@ -101,8 +113,8 @@
                 <select id="periodSelect">
                   <option value="1mo">1 Ay</option>
                   <option value="3mo">3 Ay</option>
-                  <option value="6mo" selected>6 Ay</option>
-                  <option value="1y">1 Yıl</option>
+                  <option value="6mo">6 Ay</option>
+                  <option value="1y" selected>1 Yıl</option>
                   <option value="2y">2 Yıl</option>
                   <option value="5y">5 Yıl</option>
                 </select>
@@ -193,9 +205,62 @@
             <div class="param-desc">Volatilite sıçramalarında APT daralma duyarlılık üssü.</div>
           </div>
 
+          <!-- BACKTEST SPECIFIC SETTINGS (Visible in Backtest Mode) -->
+          <div id="backtestSettingsGroup" style="display: none;">
+            <div class="divider"></div>
+            <div class="section-title">
+              <i data-lucide="shield-check"></i> Strateji & Risk Ayarları
+            </div>
+
+            <div class="form-group">
+              <label for="btStrategyType">Strateji Mantığı</label>
+              <select id="btStrategyType">
+                <option value="pivot_flip" selected>Pivot Rejimi (Re-Anchor Yönü)</option>
+                <option value="price_cross">Fiyat / DSAVWAP Kesişimi</option>
+                <option value="pullback_bounce">VWAP Testi & Sekme (Pullback)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="btTradeMode">İşlem Yönü</label>
+              <select id="btTradeMode">
+                <option value="long_and_short" selected>Long & Short (Çift Yön)</option>
+                <option value="long_only">Sadece Long (Spot / Hisse)</option>
+                <option value="short_only">Sadece Short</option>
+              </select>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="btInitialCapital">Başlangıç ($)</label>
+                <input type="number" id="btInitialCapital" value="10000" min="100" step="500" />
+              </div>
+              <div class="form-group">
+                <label for="btCommission">Komisyon (%)</label>
+                <input type="number" id="btCommission" value="0.05" min="0" max="2" step="0.01" />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="btStopLoss">Stop Loss (%)</label>
+                <input type="number" id="btStopLoss" placeholder="Yok" min="0.5" max="50" step="0.5" />
+              </div>
+              <div class="form-group">
+                <label for="btTakeProfit">Take Profit (%)</label>
+                <input type="number" id="btTakeProfit" placeholder="Yok" min="1" max="100" step="1" />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="btTrailingStop">Takip Eden Stop / Trailing Stop (%)</label>
+              <input type="number" id="btTrailingStop" placeholder="Yok" min="0.5" max="30" step="0.5" />
+            </div>
+          </div>
+
           <button class="btn btn-primary btn-block btn-lg" id="btnRecalculate">
             <i data-lucide="zap"></i>
-            <span>Hesapla ve Güncelle</span>
+            <span id="btnRecalculateText">Hesapla ve Güncelle</span>
           </button>
 
           <!-- Attribution Footer -->
@@ -212,130 +277,233 @@
       <!-- RIGHT DASHBOARD & CHARTS -->
       <main class="main-panel">
         
-        <!-- METRICS ROW -->
-        <div class="metrics-row">
+        <!-- ================================================================
+             VIEW 1: CHART ANALYSIS SCREEN
+             ================================================================ -->
+        <div class="view-screen active" id="viewChart">
           
-          <div class="metric-card">
-            <div class="metric-label">Son Fiyat</div>
-            <div class="metric-value" id="metricPrice">$0.00</div>
-            <div class="metric-sub" id="metricPriceChange">+0.00%</div>
-          </div>
-
-          <div class="metric-card">
-            <div class="metric-label">DSAVWAP</div>
-            <div class="metric-value" id="metricVwap">$0.00</div>
-            <div class="metric-sub" id="metricVwapDiff">+0.00% Fark</div>
-          </div>
-
-          <div class="metric-card">
-            <div class="metric-label">Piyasa Rejimi</div>
-            <div class="metric-badge" id="metricRegime">BULLISH</div>
-            <div class="metric-sub" id="metricRegimeSub">Trend Yönü: +1</div>
-          </div>
-
-          <div class="metric-card">
-            <div class="metric-label">Son Swing Pivotu</div>
-            <div class="metric-pivot" id="metricLastPivot">
-              <span class="pivot-badge" id="metricPivotBadge">HH</span>
-              <span class="pivot-price" id="metricPivotPrice">$0.00</span>
+          <!-- METRICS ROW -->
+          <div class="metrics-row">
+            <div class="metric-card">
+              <div class="metric-label">Son Fiyat</div>
+              <div class="metric-value" id="metricPrice">$0.00</div>
+              <div class="metric-sub" id="metricPriceChange">+0.00%</div>
             </div>
-            <div class="metric-sub" id="metricTotalSegments">Toplam Segment: 0</div>
-          </div>
 
-          <div class="metric-card">
-            <div class="metric-label">Aktif APT (Hassasiyet)</div>
-            <div class="metric-value" id="metricApt">20.0 bar</div>
-            <div class="metric-sub">EWMA Half-Life</div>
-          </div>
-
-        </div>
-
-        <!-- CHART CONTAINER -->
-        <div class="chart-section">
-          <div class="chart-toolbar">
-            <div class="chart-title" id="chartHeaderTitle">BTC-USD (6mo, 1d) — Dynamic Swing Anchored VWAP</div>
-            <div class="chart-legend">
-              <span class="legend-item"><span class="dot bull"></span> Bullish VWAP</span>
-              <span class="legend-item"><span class="dot bear"></span> Bearish VWAP</span>
-              <span class="legend-item"><span class="badge-mini badge-hh">HH</span> Yüksek Tepe</span>
-              <span class="legend-item"><span class="badge-mini badge-ll">LL</span> Düşük Dip</span>
+            <div class="metric-card">
+              <div class="metric-label">DSAVWAP</div>
+              <div class="metric-value" id="metricVwap">$0.00</div>
+              <div class="metric-sub" id="metricVwapDiff">+0.00% Fark</div>
             </div>
-            <button class="btn btn-icon btn-sm" id="btnResetZoom" title="Grafiği Sıfırla">
-              <i data-lucide="maximize"></i>
-            </button>
-          </div>
 
-          <div class="chart-wrapper" id="tvChartContainer">
-            <!-- Lightweight Chart is injected here -->
-            <div class="chart-loader" id="chartLoader">
-              <div class="spinner"></div>
-              <span>Grafik ve VWAP Hesaplanıyor...</span>
+            <div class="metric-card">
+              <div class="metric-label">Piyasa Rejimi</div>
+              <div class="metric-badge" id="metricRegime">BULLISH</div>
+              <div class="metric-sub" id="metricRegimeSub">Trend Yönü: +1</div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-label">Son Swing Pivotu</div>
+              <div class="metric-pivot" id="metricLastPivot">
+                <span class="pivot-badge" id="metricPivotBadge">HH</span>
+                <span class="pivot-price" id="metricPivotPrice">$0.00</span>
+              </div>
+              <div class="metric-sub" id="metricTotalSegments">Toplam Segment: 0</div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-label">Aktif APT (Hassasiyet)</div>
+              <div class="metric-value" id="metricApt">20.0 bar</div>
+              <div class="metric-sub">EWMA Half-Life</div>
             </div>
           </div>
-        </div>
 
-        <!-- BOTTOM INSPECTOR TABS (Anchors & Table) -->
-        <div class="inspector-section">
-          <div class="inspector-header">
-            <div class="inspector-tabs">
-              <button class="insp-tab active" data-target="panelAnchors">
-                <i data-lucide="anchor"></i> Swing Pivot ve Re-Anchor Noktaları (<span id="countAnchors">0</span>)
-              </button>
-              <button class="insp-tab" data-target="panelTable">
-                <i data-lucide="table"></i> Son Barlar Veri Listesi
+          <!-- CHART CONTAINER -->
+          <div class="chart-section">
+            <div class="chart-toolbar">
+              <div class="chart-title" id="chartHeaderTitle">BTC-USD — Dynamic Swing Anchored VWAP</div>
+              <div class="chart-legend">
+                <span class="legend-item"><span class="dot bull"></span> Bullish VWAP</span>
+                <span class="legend-item"><span class="dot bear"></span> Bearish VWAP</span>
+                <span class="legend-item"><span class="badge-mini badge-hh">HH</span> Yüksek Tepe</span>
+                <span class="legend-item"><span class="badge-mini badge-ll">LL</span> Düşük Dip</span>
+              </div>
+              <button class="btn btn-icon btn-sm" id="btnResetZoom" title="Grafiği Sıfırla">
+                <i data-lucide="maximize"></i>
               </button>
             </div>
+
+            <div class="chart-wrapper" id="tvChartContainer">
+              <div class="chart-loader" id="chartLoader">
+                <div class="spinner"></div>
+                <span>Grafik ve VWAP Hesaplanıyor...</span>
+              </div>
+            </div>
           </div>
 
-          <div class="inspector-body">
-            
-            <!-- Anchors List Panel -->
-            <div class="insp-pane active" id="panelAnchors">
-              <div class="table-container">
-                <table class="data-table" id="anchorsTable">
-                  <thead>
-                    <tr>
-                      <th>Tarih / Bar</th>
-                      <th>Pivot Tipi</th>
-                      <th>Pivot Fiyatı</th>
-                      <th>Yön Rejimi</th>
-                      <th>Segment ID</th>
-                      <th>Açıklama</th>
-                    </tr>
-                  </thead>
-                  <tbody id="anchorsTableBody">
-                    <tr><td colspan="6" class="text-center text-muted">Henüz veri yok.</td></tr>
-                  </tbody>
-                </table>
+          <!-- BOTTOM INSPECTOR TABS (Anchors & Table) -->
+          <div class="inspector-section">
+            <div class="inspector-header">
+              <div class="inspector-tabs">
+                <button class="insp-tab active" data-target="panelAnchors">
+                  <i data-lucide="anchor"></i> Swing Pivot ve Re-Anchor Noktaları (<span id="countAnchors">0</span>)
+                </button>
+                <button class="insp-tab" data-target="panelTable">
+                  <i data-lucide="table"></i> Son Barlar Veri Listesi
+                </button>
               </div>
             </div>
 
-            <!-- Full Bars Table Panel -->
-            <div class="insp-pane" id="panelTable">
+            <div class="inspector-body">
+              <!-- Anchors List Panel -->
+              <div class="insp-pane active" id="panelAnchors">
+                <div class="table-container">
+                  <table class="data-table" id="anchorsTable">
+                    <thead>
+                      <tr>
+                        <th>Tarih / Bar</th>
+                        <th>Pivot Tipi</th>
+                        <th>Pivot Fiyatı</th>
+                        <th>Yön Rejimi</th>
+                        <th>Segment ID</th>
+                        <th>Açıklama</th>
+                      </tr>
+                    </thead>
+                    <tbody id="anchorsTableBody">
+                      <tr><td colspan="6" class="text-center text-muted">Henüz veri yok.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Full Bars Table Panel -->
+              <div class="insp-pane" id="panelTable">
+                <div class="table-container">
+                  <table class="data-table" id="barsTable">
+                    <thead>
+                      <tr>
+                        <th>Tarih</th>
+                        <th>Açılış</th>
+                        <th>Yüksek</th>
+                        <th>Düşük</th>
+                        <th>Kapanış</th>
+                        <th>Hacim</th>
+                        <th>DSAVWAP</th>
+                        <th>Yön</th>
+                        <th>Segment</th>
+                        <th>APT</th>
+                      </tr>
+                    </thead>
+                    <tbody id="barsTableBody">
+                      <tr><td colspan="10" class="text-center text-muted">Henüz veri yok.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ================================================================
+             VIEW 2: BACKTEST SCREEN
+             ================================================================ -->
+        <div class="view-screen" id="viewBacktest">
+          
+          <!-- BACKTEST KPI CARDS -->
+          <div class="metrics-row">
+            <div class="metric-card">
+              <div class="metric-label">Net Kâr / Getiri</div>
+              <div class="metric-value font-mono" id="btNetProfit">$0.00 (+0.0%)</div>
+              <div class="metric-sub" id="btBenchmarkReturn">Buy & Hold: +0.0%</div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-label">Kazanma Oranı (Win Rate)</div>
+              <div class="metric-value font-mono" id="btWinRate">0.0%</div>
+              <div class="metric-sub" id="btTradesCount">0 Kazanan / 0 Kaybeden (0 Toplam)</div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-label">Kâr Faktörü (Profit Factor)</div>
+              <div class="metric-value font-mono" id="btProfitFactor">0.00</div>
+              <div class="metric-sub" id="btWinLossRatio">Kazanç/Kayıp Oranı: 0.00</div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-label">Maksimum Düşüş (Max DD)</div>
+              <div class="metric-value font-mono text-bear" id="btMaxDrawdown">0.0%</div>
+              <div class="metric-sub" id="btMaxDrawdownUsd">Düşüş Tutarı: $0.00</div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-label">Sharpe & Sortino</div>
+              <div class="metric-value font-mono" id="btSharpeSortino">0.00 / 0.00</div>
+              <div class="metric-sub" id="btAvgTrade">Ort. İşlem: +0.0%</div>
+            </div>
+          </div>
+
+          <!-- BACKTEST CHARTS SECTION (Equity Curve vs Benchmark) -->
+          <div class="chart-section" style="height: 380px;">
+            <div class="chart-toolbar">
+              <div class="chart-title" id="btEquityChartTitle">Portföy Büyüme Eğrisi (Equity Curve) vs Buy & Hold Benchmark</div>
+              <div class="chart-legend">
+                <span class="legend-item"><span class="dot bull"></span> Strateji Portföyü</span>
+                <span class="legend-item"><span class="dot" style="background: #2962ff;"></span> Buy & Hold</span>
+              </div>
+              <button class="btn btn-icon btn-sm" id="btnResetEquityZoom" title="Grafiği Sıfırla">
+                <i data-lucide="maximize"></i>
+              </button>
+            </div>
+
+            <div class="chart-wrapper" id="tvEquityChartContainer">
+              <div class="chart-loader" id="btChartLoader">
+                <div class="spinner"></div>
+                <span>Backtest Simülasyonu Çalıştırılıyor...</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- BACKTEST TRADE LOG INSPECTOR -->
+          <div class="inspector-section">
+            <div class="inspector-header" style="justify-content: space-between; padding-right: 16px;">
+              <div class="inspector-tabs">
+                <button class="insp-tab active">
+                  <i data-lucide="list-ordered"></i> Gerçekleşen İşlem Geçmişi (<span id="countTrades">0</span> İşlem)
+                </button>
+              </div>
+              <button class="btn btn-secondary btn-xs" id="btnExportTradesCsv">
+                <i data-lucide="download"></i> İşlem Kayıtlarını CSV İndir
+              </button>
+            </div>
+
+            <div class="inspector-body" style="max-height: 320px;">
               <div class="table-container">
-                <table class="data-table" id="barsTable">
+                <table class="data-table" id="tradesTable">
                   <thead>
                     <tr>
-                      <th>Tarih</th>
-                      <th>Açılış</th>
-                      <th>Yüksek</th>
-                      <th>Düşük</th>
-                      <th>Kapanış</th>
-                      <th>Hacim</th>
-                      <th>DSAVWAP</th>
+                      <th>#</th>
+                      <th>Giriş Tarihi</th>
+                      <th>Çıkış Tarihi</th>
                       <th>Yön</th>
-                      <th>Segment</th>
-                      <th>APT</th>
+                      <th>Giriş Fiyatı</th>
+                      <th>Çıkış Fiyatı</th>
+                      <th>Büyüklük</th>
+                      <th>Net PnL ($)</th>
+                      <th>Getiri (%)</th>
+                      <th>Komisyon</th>
+                      <th>Çıkış Nedeni</th>
+                      <th>Süre (Bar)</th>
                     </tr>
                   </thead>
-                  <tbody id="barsTableBody">
-                    <tr><td colspan="10" class="text-center text-muted">Henüz veri yok.</td></tr>
+                  <tbody id="tradesTableBody">
+                    <tr><td colspan="12" class="text-center text-muted">Backtest çalıştırılmadı.</td></tr>
                   </tbody>
                 </table>
               </div>
             </div>
-
           </div>
+
         </div>
 
       </main>

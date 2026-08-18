@@ -1,4 +1,4 @@
-# Dynamic Swing Anchored VWAP (Zeiierman) — Python Port
+# Dynamic Swing Anchored VWAP (Zeiierman) — Python & Interactive Backtester
 
 > **Credit**: Faithful Python 3.11+ re-implementation of the open-source TradingView indicator **"Dynamic Swing Anchored VWAP (Zeiierman)"** ([TradingView script](https://www.tradingview.com/v/SxgyrEde/)), licensed CC BY-NC-SA 4.0. Keep attribution and non-commercial/share-alike terms in mind.
 
@@ -12,25 +12,47 @@ Unlike traditional VWAP indicators that remain anchored to static calendar point
 2. **Re-Anchors Dynamically**: Resets and re-seeds VWAP calculation at the confirmed swing pivot, recomputing forward to reflect current market participants' volume-weighted average price.
 3. **Adaptive Price Tracking (APT)**: Uses EWMA half-life decay with optional ATR-based volatility scaling (speeds up during high volatility, smooths during quiet consolidation).
 4. **Market Structure Labeling**: Identifies and tags structural pivot points (`HH` = Higher High, `LH` = Lower High, `LL` = Lower Low, `HL` = Higher Low).
+5. **Integrated Strategy Backtester**: Test quantitative strategies (Pivot Regime Flips, Price Crossovers, VWAP Pullback Retests) with stop loss, take profit, trailing stops, and institutional risk metrics.
 
 ---
 
-## 🚀 Quickstart
+## 🖥️ Interactive Web Application & Backtest Terminal
 
-### 1. Installation
+Start the web terminal locally:
 
 ```bash
-# Clone or navigate to the repository
+# Navigate to the project directory
 cd /Users/i034216/Documents/myAI_projects/vwap
 
 # Activate virtual environment
 source .venv/bin/activate
 
-# Install dependencies
+# Launch the FastAPI server
+python server.py
+```
+
+Then open **[http://127.0.0.1:8000](http://127.0.0.1:8000)** in your browser.
+
+### Web Terminal Features:
+- **Dual Mode Interface**:
+  - **Grafik & Analiz (Chart Mode)**: Interactive candlestick charts, segmented directional VWAP lines, swing pivot markers (`HH`, `HL`, `LH`, `LL`), volume histogram, and metric cards.
+  - **Strateji Backtesti (Backtest Mode)**: Portfolio Equity Curve vs Buy & Hold Benchmark, Win Rate, Profit Factor, Max Drawdown, Sharpe / Sortino ratios, and complete trade log history table.
+- **Data Sources**: Live Yahoo Finance tickers (Crypto, US Stocks, BIST, Forex, Commodities), CSV uploads, and synthetic market simulations.
+- **Dynamic Parameter Tuning**: Sliders for `swing_period`, `base_apt`, `vol_bias`, toggle for `use_adapt`, stop-loss %, take-profit %, trailing stop %, and commission %.
+- **Data Export**: Export processed OHLCV + DSAVWAP data or backtest trade logs to CSV.
+- **Theme**: Dark and Light theme toggle.
+
+---
+
+## 🚀 Quickstart & Python Usage
+
+### 1. Installation
+
+```bash
 pip install -r requirements.txt
 ```
 
-### 2. Basic Python Usage
+### 2. Indicator Calculation in Python
 
 ```python
 import pandas as pd
@@ -52,9 +74,29 @@ out = dynamic_swing_anchored_vwap(
 plot_dsavwap(df, out, title="BTC-USD Dynamic Swing Anchored VWAP", save_path="chart.png")
 ```
 
-### 3. CLI Runner
+### 3. Strategy Backtesting in Python
 
-You can run the indicator directly from the terminal for live Yahoo Finance symbols, CSV files, or simulation:
+```python
+from backtest_engine import run_dsavwap_backtest
+
+# Run backtest on calculated DSAVWAP
+bt_result = run_dsavwap_backtest(
+    df=df,
+    out=out,
+    strategy_type="pivot_flip",        # "pivot_flip", "price_cross", "pullback_bounce"
+    trade_mode="long_and_short",       # "long_and_short", "long_only", "short_only"
+    initial_capital=10000.0,
+    stop_loss_pct=3.0,                 # 3% stop loss
+    take_profit_pct=6.0,               # 6% take profit
+    commission_pct=0.05                # 0.05% commission
+)
+
+print(f"Net Profit: ${bt_result.net_profit} ({bt_result.net_profit_pct}%)")
+print(f"Win Rate: {bt_result.win_rate_pct}% | Profit Factor: {bt_result.profit_factor}")
+print(f"Max Drawdown: {bt_result.max_drawdown_pct}% | Sharpe: {bt_result.sharpe_ratio}")
+```
+
+### 4. CLI Runner
 
 ```bash
 # Run on live Bitcoin daily data
@@ -65,9 +107,6 @@ python main.py --ticker NVDA --period 1mo --interval 1h --use-adapt
 
 # Run on custom CSV data
 python main.py --csv my_data.csv --output-csv results.csv --plot my_chart.png
-
-# Run on synthetic market data
-python main.py
 ```
 
 ---
@@ -126,10 +165,3 @@ Run the full pytest suite:
 ```bash
 pytest dynamic_swing_anchored_vwap.py -v
 ```
-
-Includes test cases for:
-- [x] Constant price + constant volume consistency.
-- [x] Synthetic V-shaped reversal and `LL`/`HH` turn verification.
-- [x] Volatility spike adaptation and APT reduction.
-- [x] Zero-volume bar protection against division by zero.
-- [x] Strict parameter boundary validation.
