@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+html,body{margin:0;padding:0;background:#131722;height:100%}
+a{color:#2962ff;text-decoration:none}a:hover{color:#5b8cff}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:#363a45;border-radius:4px}
+::-webkit-scrollbar-track{background:transparent}
+input:focus,select:focus,button:focus{outline:1px solid #2962ff}
+</style>
+</helmet>
+<div style="display:flex;flex-direction:column;height:100vh;background:#131722;color:#d1d4dc;font-family:-apple-system,'Segoe UI','Trebuchet MS',sans-serif;font-size:13px;color-scheme:dark;overflow:hidden" data-screen-label="Backtester">
+  <div style="display:flex;align-items:center;gap:12px;height:48px;padding:0 12px;background:#1e222d;border-bottom:1px solid #2a2e39;flex:none">
+    <div style="width:28px;height:28px;border-radius:6px;background:#2962ff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;color:#fff;flex:none">Z</div>
+    <div style="line-height:1.15">
+      <div style="font-weight:700;font-size:13px;color:#f0f3fa">Zimmer VWAP</div>
+      <div style="font-size:10px;color:#787b86">Dynamic Swing Anchored VWAP · Backtester</div>
+    </div>
+    <div style="width:1px;height:24px;background:#2a2e39"></div>
+    <select value="{{ symbol }}" onChange="{{ onSymbol }}" style="background:#131722;border:1px solid #2a2e39;border-radius:4px;color:#d1d4dc;padding:6px 8px;font-size:13px;font-weight:600;cursor:pointer">
+      <option value="BTCUSDT">BTCUSDT</option>
+      <option value="ETHUSDT">ETHUSDT</option>
+      <option value="SOLUSDT">SOLUSDT</option>
+      <option value="XAUUSD">XAUUSD</option>
+      <option value="EURUSD">EURUSD</option>
+    </select>
+    <div style="display:flex;gap:2px;background:#131722;border:1px solid #2a2e39;border-radius:4px;padding:2px">
+      <sc-for list="{{ tfBtns }}" as="b" hint-placeholder-count="5">
+        <button style="{{ b.st }}" onClick="{{ b.on }}">{{ b.label }}</button>
+      </sc-for>
+    </div>
+    <div style="width:1px;height:24px;background:#2a2e39"></div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span style="color:#787b86;font-size:11px">Aralık</span>
+      <input type="date" value="{{ dateFrom }}" onChange="{{ onDateFrom }}" style="background:#131722;border:1px solid #2a2e39;border-radius:4px;color:#d1d4dc;padding:4px 6px;font-size:11px" />
+      <span style="color:#787b86">→</span>
+      <input type="date" value="{{ dateTo }}" onChange="{{ onDateTo }}" style="background:#131722;border:1px solid #2a2e39;border-radius:4px;color:#d1d4dc;padding:4px 6px;font-size:11px" />
+    </div>
+    <div style="flex:1"></div>
+    <div style="font-size:11px;color:#787b86">{{ ranLabel }}</div>
+    <button onClick="{{ run }}" style="background:#2962ff;border:none;border-radius:4px;color:#fff;font-weight:700;font-size:12px;padding:8px 16px;cursor:pointer;display:flex;align-items:center;gap:6px" style-hover="background:#1e53e5">▶ Backtest Çalıştır</button>
+  </div>
+  <div style="display:flex;flex:1;min-height:0">
+    <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+      <div style="flex:1;position:relative;min-height:0" ref="{{ wrapRef }}">
+        <canvas ref="{{ chartRef }}" onMouseMove="{{ onMove }}" onMouseLeave="{{ onLeave }}" onMouseDown="{{ onDown }}" style="position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair"></canvas>
+      </div>
+      <div style="height:272px;flex:none;border-top:1px solid #2a2e39;display:flex;flex-direction:column;background:#131722">
+        <div style="display:flex;align-items:center;gap:2px;padding:0 8px;background:#1e222d;border-bottom:1px solid #2a2e39;flex:none;height:34px">
+          <span style="font-weight:700;font-size:12px;color:#f0f3fa;margin-right:10px">Strateji Test Aracı</span>
+          <sc-for list="{{ tabBtns }}" as="t" hint-placeholder-count="3">
+            <button style="{{ t.st }}" onClick="{{ t.on }}">{{ t.label }}</button>
+          </sc-for>
+        </div>
+        <sc-if value="{{ tabOverview }}" hint-placeholder-val="{{ true }}">
+          <div style="flex:1;display:flex;min-height:0">
+            <div style="width:452px;flex:none;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:12px;align-content:start;border-right:1px solid #1f2333">
+              <sc-for list="{{ tiles }}" as="m" hint-placeholder-count="6">
+                <div style="background:#1e222d;border:1px solid #2a2e39;border-radius:6px;padding:10px 12px">
+                  <div style="font-size:10px;color:#787b86;letter-spacing:0.3px;text-transform:uppercase">{{ m.l }}</div>
+                  <div style="font-size:17px;font-weight:700;font-family:ui-monospace,'SF Mono',Menlo,monospace;margin-top:4px;color:{{ m.c }}">{{ m.v }}</div>
+                  <div style="font-size:10px;color:#787b86;margin-top:2px">{{ m.s }}</div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="flex:1;position:relative;min-width:0">
+              <canvas ref="{{ eqRef }}" style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ tabPerf }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:1;overflow-y:auto;padding:10px 16px">
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0 40px">
+              <sc-for list="{{ perfItems }}" as="p" hint-placeholder-count="9">
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1f2333">
+                  <span style="color:#b2b5be;font-size:12px">{{ p.l }}</span>
+                  <span style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;font-weight:600;color:{{ p.c }}">{{ p.v }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ tabTrades }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:1;overflow-y:auto;min-height:0">
+            <div style="display:grid;grid-template-columns:32px 48px minmax(90px,1fr) 84px minmax(90px,1fr) 84px 96px 92px 60px 92px;white-space:nowrap;overflow:hidden;padding:7px 12px;font-size:10px;color:#787b86;text-transform:uppercase;letter-spacing:0.4px;position:sticky;top:0;background:#1e222d;border-bottom:1px solid #2a2e39;z-index:1">
+              <span>#</span><span>Yön</span><span>Giriş Zamanı</span><span style="text-align:right">Giriş</span><span style="padding-left:16px">Çıkış Zamanı</span><span style="text-align:right">Çıkış</span><span style="padding-left:16px">Neden</span><span style="text-align:right">K/Z ($)</span><span style="text-align:right">K/Z %</span><span style="text-align:right">Kümülatif</span>
+            </div>
+            <sc-for list="{{ tradeRows }}" as="t" hint-placeholder-count="8">
+              <div style="display:grid;grid-template-columns:32px 48px minmax(90px,1fr) 84px minmax(90px,1fr) 84px 96px 92px 60px 92px;white-space:nowrap;overflow:hidden;padding:6px 12px;font-size:12px;border-bottom:1px solid #1f2333;font-family:ui-monospace,'SF Mono',Menlo,monospace" style-hover="background:#1e222d">
+                <span style="color:#787b86">{{ t.n }}</span>
+                <span style="font-weight:700;color:{{ t.sc }}">{{ t.side }}</span>
+                <span style="color:#b2b5be">{{ t.ed }}</span>
+                <span style="text-align:right">{{ t.ep }}</span>
+                <span style="color:#b2b5be;padding-left:16px">{{ t.xd }}</span>
+                <span style="text-align:right">{{ t.xp }}</span>
+                <span style="color:#787b86;padding-left:16px;font-family:inherit">{{ t.reason }}</span>
+                <span style="text-align:right;font-weight:600;color:{{ t.pc }}">{{ t.pnl }}</span>
+                <span style="text-align:right;color:{{ t.pc }}">{{ t.pp }}</span>
+                <span style="text-align:right;color:#b2b5be">{{ t.cum }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+    <div style="width:288px;flex:none;border-left:1px solid #2a2e39;background:#1e222d;display:flex;flex-direction:column;overflow-y:auto">
+      <div style="padding:12px 14px 6px;font-size:10px;font-weight:700;color:#787b86;letter-spacing:0.6px">STRATEJİ PARAMETRELERİ</div>
+      <sc-for list="{{ stratFields }}" as="f" hint-placeholder-count="3">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 14px">
+          <label style="color:#b2b5be;font-size:12px">{{ f.label }}</label>
+          <input type="number" value="{{ f.val }}" onChange="{{ f.on }}" step="{{ f.step }}" min="{{ f.min }}" style="background:#131722;border:1px solid #2a2e39;border-radius:4px;color:#d1d4dc;padding:5px 8px;font-size:12px;width:84px;text-align:right;font-family:ui-monospace,Menlo,monospace" />
+        </div>
+      </sc-for>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 14px">
+        <label style="color:#b2b5be;font-size:12px">İşlem Yönü</label>
+        <select value="{{ dir }}" onChange="{{ onDir }}" style="background:#131722;border:1px solid #2a2e39;border-radius:4px;color:#d1d4dc;padding:5px 8px;font-size:12px;width:102px;cursor:pointer">
+          <option value="both">Uzun + Kısa</option>
+          <option value="long">Sadece Uzun</option>
+          <option value="short">Sadece Kısa</option>
+        </select>
+      </div>
+      <div style="padding:14px 14px 6px;font-size:10px;font-weight:700;color:#787b86;letter-spacing:0.6px">EMİR AYARLARI</div>
+      <sc-for list="{{ orderFields }}" as="f" hint-placeholder-count="3">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 14px">
+          <label style="color:#b2b5be;font-size:12px">{{ f.label }}</label>
+          <input type="number" value="{{ f.val }}" onChange="{{ f.on }}" step="{{ f.step }}" min="{{ f.min }}" style="background:#131722;border:1px solid #2a2e39;border-radius:4px;color:#d1d4dc;padding:5px 8px;font-size:12px;width:84px;text-align:right;font-family:ui-monospace,Menlo,monospace" />
+        </div>
+      </sc-for>
+      <div style="display:flex;gap:8px;padding:14px">
+        <button onClick="{{ apply }}" style="flex:1;background:#2962ff;border:none;border-radius:4px;color:#fff;font-weight:700;font-size:12px;padding:9px 0;cursor:pointer" style-hover="background:#1e53e5">Uygula</button>
+        <button onClick="{{ reset }}" style="background:transparent;border:1px solid #2a2e39;border-radius:4px;color:#b2b5be;font-size:12px;padding:9px 12px;cursor:pointer" style-hover="border-color:#434651;color:#d1d4dc">Varsayılan</button>
+      </div>
+      <div style="margin:0 14px 14px;padding:10px 12px;background:#131722;border:1px solid #2a2e39;border-radius:6px;font-size:11px;color:#787b86;line-height:1.5">
+        <div style="font-weight:700;color:#b2b5be;margin-bottom:4px">Strateji mantığı</div>
+        VWAP her onaylanmış swing dip/tepe noktasına yeniden çapalanır. Fiyat, dip çapalı VWAP'ı yukarı kestiğinde <span style="color:#089981;font-weight:600">uzun</span>, tepe çapalı VWAP'ı aşağı kestiğinde <span style="color:#f23645;font-weight:600">kısa</span> pozisyon açılır. Çıkış: ±2σ hedef, ∓1σ stop veya ters sinyal.
+      </div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:14px;height:26px;padding:0 12px;background:#1e222d;border-top:1px solid #2a2e39;flex:none;font-size:11px;color:#787b86">
+    <span>{{ statusLeft }}</span>
+    <div style="flex:1"></div>
+    <span>Kaydırma: sürükle · Yakınlaştırma: tekerlek</span>
+    <span style="color:#4a4e5a">|</span>
+    <span style="color:#ff9800">Sentetik örnek veri — demo</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showVolume&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Grafik&quot;},&quot;showBands&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Grafik&quot;},&quot;showAnchors&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Grafik&quot;}}">
+class Component extends DCLogic {
+  state = {
+    symbol:'BTCUSDT', tf:'1h', tab:'ov', ready:false, ranAt:null,
+    dateFrom:'', dateTo:'',
+    params:{len:8,m1:1,m2:2,dir:'both',capital:100000,sizePct:20,commPct:0.05},
+    form:{len:8,m1:1,m2:2,dir:'both',capital:100000,sizePct:20,commPct:0.05}
+  };
+  MO=['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
+  DEF={len:8,m1:1,m2:2,dir:'both',capital:100000,sizePct:20,commPct:0.05};
+
+  componentDidMount(){
+    import('./engine.js').then(m=>{this.E=m;this.run()});
+    this._up=()=>{if(this.dragging){this.dragging=false;this.rq()}};
+    window.addEventListener('mouseup',this._up);
+    this._mv=e=>{if(this.dragging)this.pan(e.clientX)};
+    window.addEventListener('mousemove',this._mv);
+    this._rs=()=>this.rq();
+    window.addEventListener('resize',this._rs);
+  }
+  componentWillUnmount(){
+    window.removeEventListener('mouseup',this._up);
+    window.removeEventListener('mousemove',this._mv);
+    window.removeEventListener('resize',this._rs);
+    if(this._ro)this._ro.disconnect();
+  }
+  componentDidUpdate(){this.rq()}
+
+  run=()=>{
+    if(!this.E)return;
+    const {symbol,tf,params,dateFrom,dateTo}=this.state;
+    let data=this.E.genData(symbol,tf,420);
+    if(dateFrom){const t=Date.parse(dateFrom);if(!isNaN(t))data=data.filter(b=>b.t>=t)}
+    if(dateTo){const t=Date.parse(dateTo);if(!isNaN(t))data=data.filter(b=>b.t<t+86400000)}
+    if(data.length<40)data=this.E.genData(symbol,tf,420);
+    const swings=this.E.computeSwings(data,params.len);
+    const vw=this.E.computeVWAP(data,swings,params.m1,params.m2);
+    const bt=this.E.backtest(data,vw,params);
+    const met=this.E.metrics(bt.trades,bt.equity,params.capital,tf);
+    met.comm=bt.commTotal;
+    this.res={data,vw,trades:bt.trades,equity:bt.equity,met};
+    const n=data.length;
+    this.view={s:Math.max(0,n-170),e:n};
+    this.setState({ready:true,ranAt:Date.now()});
+    this.rq();
+  };
+  rq(){if(this._raf)return;this._raf=requestAnimationFrame(()=>{this._raf=0;this.draw()})}
+
+  fp(v){const dec={BTCUSDT:1,ETHUSDT:2,SOLUSDT:2,XAUUSD:2,EURUSD:5}[this.state.symbol];return v.toLocaleString('en-US',{minimumFractionDigits:dec,maximumFractionDigits:dec})}
+  fm(v){const s=v<0?'−':'+';return s+'$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
+  ft(t){const d=new Date(t);const dd=d.getUTCDate()+' '+this.MO[d.getUTCMonth()];
+    if(this.state.tf==='1D')return dd;
+    return dd+' '+String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0')}
+  ft2(t){const d=new Date(t);const dd=d.getUTCDate()+' '+this.MO[d.getUTCMonth()]+' \''+String(d.getUTCFullYear()).slice(2);
+    if(this.state.tf==='1D')return dd;
+    return dd+' '+String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0')}
+  nice(min,max,n){const span=max-min;if(span<=0)return[];const step0=span/Math.max(2,n);
+    const mag=Math.pow(10,Math.floor(Math.log10(step0)));const norm=step0/mag;
+    const step=(norm<1.5?1:norm<3?2:norm<7?5:10)*mag;const out=[];
+    for(let v=Math.ceil(min/step)*step;v<=max;v+=step)out.push(v);return out}
+
+  pan(cx){
+    const el=this.chartEl;if(!el||!this.res)return;
+    const r=el.getBoundingClientRect();
+    const perBar=(r.width-62)/(this.dragView.e-this.dragView.s);
+    const bars=Math.round((cx-this.dragX)/perBar);
+    if(!bars)return;
+    const n=this.res.data.length,len=this.dragView.e-this.dragView.s;
+    let s=Math.max(0,Math.min(n-len,this.dragView.s-bars));
+    this.view={s,e:s+len};this.rq();
+  }
+
+  draw(){this.drawChart();this.drawEq()}
+
+  drawChart(){
+    const cv=this.chartEl,res=this.res;if(!cv||!res||!this.view)return;
+    const wrap=cv.parentElement;const W=wrap.clientWidth,H=wrap.clientHeight;if(W<60||H<60)return;
+    const dpr=window.devicePixelRatio||1;cv.width=W*dpr;cv.height=H*dpr;
+    const g=cv.getContext('2d');g.setTransform(dpr,0,0,dpr,0,0);
+    g.fillStyle='#131722';g.fillRect(0,0,W,H);
+    const AX=62,TB=24,pw=W-AX,ph=H-TB;
+    const {data,vw,trades}=res;const v0=this.view.s,v1=this.view.e,n=v1-v0;
+    const showBands=this.props.showBands??true,showVol=this.props.showVolume??true,showAnc=this.props.showAnchors??true;
+    let lo=1e18,hi=-1e18,maxV=0;
+    for(let i=v0;i<v1;i++){const b=data[i];if(b.l<lo)lo=b.l;if(b.h>hi)hi=b.h;if(b.v>maxV)maxV=b.v;
+      const w=vw[i];if(w&&showBands){if(w.l2<lo)lo=w.l2;if(w.u2>hi)hi=w.u2}}
+    const pad=(hi-lo)*0.08;lo-=pad;hi+=pad;
+    const x=i=>(i-v0+0.5)*pw/n, y=p=>ph*(1-(p-lo)/(hi-lo));
+    const font='-apple-system,Segoe UI,sans-serif';
+    // grid
+    g.font='10px '+font;g.textBaseline='middle';
+    const ticks=this.nice(lo+pad*0.4,hi-pad*0.4,ph/56);
+    for(const t of ticks){const yy=y(t);g.strokeStyle='#1c2030';g.beginPath();g.moveTo(0,yy);g.lineTo(pw,yy);g.stroke();
+      g.fillStyle='#787b86';g.textAlign='left';g.fillText(this.fp(t),pw+6,yy)}
+    const every=Math.max(1,Math.round(92/(pw/n)));
+    g.textAlign='center';g.textBaseline='top';
+    for(let i=v0;i<v1;i++){if(i%every)continue;const xx=x(i);
+      g.strokeStyle='#1c2030';g.beginPath();g.moveTo(xx,0);g.lineTo(xx,ph);g.stroke();
+      g.fillStyle='#787b86';g.fillText(this.ft(data[i].t),xx,ph+7)}
+    // volume
+    if(showVol){const vh=ph*0.15;const bw2=Math.max(1,pw/n*0.7);
+      for(let i=v0;i<v1;i++){const b=data[i];
+        g.fillStyle=b.c>=b.o?'rgba(8,153,129,0.28)':'rgba(242,54,69,0.28)';
+        const h2=b.v/maxV*vh;g.fillRect(x(i)-bw2/2,ph-h2,bw2,h2)}}
+    // band segments grouped by anchor
+    const segs=[];let seg=[],cur=null;
+    for(let i=v0;i<v1;i++){const w=vw[i];
+      if(!w){if(seg.length){segs.push(seg);seg=[]}cur=null;continue}
+      if(cur!==null&&w.aI!==cur&&seg.length){segs.push(seg);seg=[]}
+      cur=w.aI;seg.push([i,w])}
+    if(seg.length)segs.push(seg);
+    for(const s of segs){
+      if(showBands&&s.length>1){
+        g.beginPath();
+        s.forEach(([i,w],k)=>{k?g.lineTo(x(i),y(w.u1)):g.moveTo(x(i),y(w.u1))});
+        for(let k=s.length-1;k>=0;k--)g.lineTo(x(s[k][0]),y(s[k][1].l1));
+        g.closePath();g.fillStyle='rgba(41,98,255,0.07)';g.fill();
+        const line=(key,style,dash)=>{g.beginPath();s.forEach(([i,w],k)=>{k?g.lineTo(x(i),y(w[key])):g.moveTo(x(i),y(w[key]))});
+          g.strokeStyle=style;g.lineWidth=1;g.setLineDash(dash);g.stroke();g.setLineDash([])};
+        line('u1','rgba(41,98,255,0.4)',[]);line('l1','rgba(41,98,255,0.4)',[]);
+        line('u2','rgba(41,98,255,0.25)',[4,4]);line('l2','rgba(41,98,255,0.25)',[4,4]);
+      }
+      // vwap line
+      g.beginPath();s.forEach(([i,w],k)=>{k?g.lineTo(x(i),y(w.v)):g.moveTo(x(i),y(w.v))});
+      g.strokeStyle=s[0][1].aType==='L'?'#089981':'#f23645';g.lineWidth=1.6;g.stroke();g.lineWidth=1;
+      // anchor diamond
+      if(showAnc){const aI=s[0][1].aI;
+        if(aI>=v0&&aI<v1){const ap=s[0][1].aType==='L'?data[aI].l:data[aI].h;
+          const ax=x(aI),ay=y(ap)+(s[0][1].aType==='L'?8:-8);
+          g.beginPath();g.moveTo(ax,ay-5);g.lineTo(ax+5,ay);g.lineTo(ax,ay+5);g.lineTo(ax-5,ay);g.closePath();
+          g.fillStyle=s[0][1].aType==='L'?'#089981':'#f23645';g.fill()}}
+    }
+    // candles
+    const bw=Math.max(1,Math.min(11,pw/n*0.7));
+    for(let i=v0;i<v1;i++){const b=data[i];const up=b.c>=b.o;const col=up?'#089981':'#f23645';const xx=x(i);
+      g.strokeStyle=col;g.beginPath();g.moveTo(xx,y(b.h));g.lineTo(xx,y(b.l));g.stroke();
+      g.fillStyle=col;g.fillRect(xx-bw/2,Math.min(y(b.o),y(b.c)),bw,Math.max(1,Math.abs(y(b.o)-y(b.c))))}
+    // trade markers
+    const tri=(xx,yy,upDir,col)=>{g.beginPath();
+      if(upDir){g.moveTo(xx,yy-5);g.lineTo(xx+5,yy+4);g.lineTo(xx-5,yy+4)}
+      else{g.moveTo(xx,yy+5);g.lineTo(xx+5,yy-4);g.lineTo(xx-5,yy-4)}
+      g.closePath();g.fillStyle=col;g.fill()};
+    for(const t of trades){
+      const inE=t.ei>=v0&&t.ei<v1,inX=t.xi!=null&&t.xi>=v0&&t.xi<v1;
+      if(inE&&t.xi!=null&&(inX||t.xi>=v1)){
+        g.beginPath();g.moveTo(x(t.ei),y(t.entry));g.lineTo(x(Math.min(t.xi,v1-1)),y(t.exit??t.entry));
+        g.strokeStyle=t.pnl>=0?'rgba(8,153,129,0.55)':'rgba(242,54,69,0.55)';g.setLineDash([3,3]);g.stroke();g.setLineDash([])}
+      if(inE){if(t.side==='L')tri(x(t.ei),y(data[t.ei].l)+12,true,'#089981');
+        else tri(x(t.ei),y(data[t.ei].h)-12,false,'#f23645')}
+      if(inX){const xx=x(t.xi),yy=t.side==='L'?y(data[t.xi].h)-10:y(data[t.xi].l)+10;
+        g.fillStyle='#b2b5be';g.fillRect(xx-3,yy-3,6,6)}
+    }
+    // crosshair
+    let hb=v1-1;
+    if(this.hover&&this.hover.mx<pw&&this.hover.my<ph){
+      hb=Math.max(v0,Math.min(v1-1,Math.round(this.hover.mx/pw*n+v0-0.5)));
+      const cx=x(hb),cy=this.hover.my;
+      g.strokeStyle='#758696';g.setLineDash([4,4]);
+      g.beginPath();g.moveTo(cx,0);g.lineTo(cx,ph);g.moveTo(0,cy);g.lineTo(pw,cy);g.stroke();g.setLineDash([]);
+      const pv=lo+(1-cy/ph)*(hi-lo);
+      g.fillStyle='#363a45';g.fillRect(pw,cy-9,AX,18);
+      g.fillStyle='#f0f3fa';g.textAlign='left';g.textBaseline='middle';g.font='10px '+font;
+      g.fillText(this.fp(pv),pw+6,cy);
+      const tl=this.ft2(data[hb].t);g.font='10px '+font;const tw=g.measureText(tl).width+14;
+      g.fillStyle='#363a45';g.fillRect(cx-tw/2,ph,tw,TB-2);
+      g.fillStyle='#f0f3fa';g.textAlign='center';g.fillText(tl,cx,ph+11);
+    }
+    // legend
+    const B=data[hb],Wv=vw[hb];
+    g.textAlign='left';g.textBaseline='alphabetic';
+    g.font='700 12px '+font;g.fillStyle='#f0f3fa';
+    g.fillText(this.state.symbol+' · '+this.state.tf+' · Zimmer VWAP Stratejisi',10,20);
+    g.font='11px '+font;let lx=10;const cc=B.c>=B.o?'#089981':'#f23645';
+    [['A',B.o],['Y',B.h],['D',B.l],['K',B.c]].forEach(([k,v])=>{
+      g.fillStyle='#787b86';g.fillText(k,lx,38);lx+=g.measureText(k).width+3;
+      g.fillStyle=cc;const s=this.fp(v);g.fillText(s,lx,38);lx+=g.measureText(s).width+10});
+    if(Wv){g.fillStyle=Wv.aType==='L'?'#089981':'#f23645';
+      g.fillText('VWAP '+this.fp(Wv.v)+'  ·  Çapa: '+(Wv.aType==='L'?'Swing Dip':'Swing Tepe')+' ('+this.ft(data[Wv.aI].t)+')',10,54);
+      g.fillStyle='#787b86';
+      g.fillText('+1σ '+this.fp(Wv.u1)+'   −1σ '+this.fp(Wv.l1)+'   ±2σ bantları kesikli',10,69)}
+    // axis borders
+    g.strokeStyle='#2a2e39';g.beginPath();g.moveTo(pw+0.5,0);g.lineTo(pw+0.5,H);g.moveTo(0,ph+0.5);g.lineTo(W,ph+0.5);g.stroke();
+  }
+
+  drawEq(){
+    const cv=this.eqEl,res=this.res;if(!cv||!res||this.state.tab!=='ov')return;
+    const wrap=cv.parentElement;const W=wrap.clientWidth,H=wrap.clientHeight;if(W<40||H<40)return;
+    const dpr=window.devicePixelRatio||1;cv.width=W*dpr;cv.height=H*dpr;
+    const g=cv.getContext('2d');g.setTransform(dpr,0,0,dpr,0,0);
+    g.fillStyle='#131722';g.fillRect(0,0,W,H);
+    const eq=res.equity;if(!eq.length)return;
+    const AX=70,PT=22,PB=8,pw=W-AX,ph=H-PT-PB;
+    let lo=Infinity,hi=-Infinity;for(const e of eq){if(e.v<lo)lo=e.v;if(e.v>hi)hi=e.v}
+    const cap=this.state.params.capital;lo=Math.min(lo,cap);hi=Math.max(hi,cap);
+    const pad=(hi-lo)*0.1||1;lo-=pad;hi+=pad;
+    const x=i=>i/(eq.length-1)*pw, y=v=>PT+ph*(1-(v-lo)/(hi-lo));
+    g.font='10px -apple-system,sans-serif';g.textBaseline='middle';
+    for(const t of this.nice(lo,hi,ph/44)){const yy=y(t);
+      g.strokeStyle='#1c2030';g.beginPath();g.moveTo(0,yy);g.lineTo(pw,yy);g.stroke();
+      g.fillStyle='#787b86';g.textAlign='left';g.fillText('$'+Math.round(t).toLocaleString('en-US'),pw+6,yy)}
+    // baseline
+    g.strokeStyle='#787b86';g.setLineDash([4,4]);g.beginPath();g.moveTo(0,y(cap));g.lineTo(pw,y(cap));g.stroke();g.setLineDash([]);
+    // area
+    const grad=g.createLinearGradient(0,PT,0,PT+ph);
+    grad.addColorStop(0,'rgba(41,98,255,0.28)');grad.addColorStop(1,'rgba(41,98,255,0)');
+    g.beginPath();eq.forEach((e,i)=>{i?g.lineTo(x(i),y(e.v)):g.moveTo(x(i),y(e.v))});
+    g.lineTo(pw,PT+ph);g.lineTo(0,PT+ph);g.closePath();g.fillStyle=grad;g.fill();
+    g.beginPath();eq.forEach((e,i)=>{i?g.lineTo(x(i),y(e.v)):g.moveTo(x(i),y(e.v))});
+    g.strokeStyle='#2962ff';g.lineWidth=1.6;g.stroke();g.lineWidth=1;
+    g.font='700 11px -apple-system,sans-serif';g.fillStyle='#b2b5be';g.textAlign='left';g.textBaseline='alphabetic';
+    g.fillText('Özkaynak Eğrisi',10,15);
+    const last=eq[eq.length-1].v;
+    g.fillStyle=last>=cap?'#089981':'#f23645';
+    g.fillText(this.fm(last-cap),110,15);
+  }
+
+  renderVals(){
+    const st=this.state,m=this.res?this.res.met:null;
+    const pos='#089981',neg='#f23645';
+    const col=v=>v>=0?pos:neg;
+    const tabBtn=act=>'padding:6px 12px;border:none;cursor:pointer;font-size:12px;font-weight:600;background:transparent;color:'+(act?'#2962ff':'#787b86')+';border-bottom:2px solid '+(act?'#2962ff':'transparent')+';height:34px';
+    const tfBtn=act=>'padding:4px 9px;border:none;border-radius:3px;cursor:pointer;font-size:12px;font-weight:600;background:'+(act?'#2a2e39':'transparent')+';color:'+(act?'#f0f3fa':'#787b86');
+    const tfBtns=['5m','15m','1h','4h','1D'].map(label=>({label,st:tfBtn(st.tf===label),
+      on:()=>this.setState({tf:label},this.run)}));
+    const tradeRowsSrc=this.res?this.res.trades:[];
+    let cum=0;
+    const tradeRows=tradeRowsSrc.map((t,i)=>{cum+=t.pnl;return{
+      n:i+1,side:t.side==='L'?'Uzun':'Kısa',sc:t.side==='L'?pos:neg,
+      ed:this.ft2(this.res.data[t.ei].t),ep:this.fp(t.entry),
+      xd:t.xi!=null?this.ft2(this.res.data[t.xi].t):'—',
+      xp:t.exit!=null?this.fp(t.exit):'—',reason:t.reason,
+      pnl:this.fm(t.pnl),pp:t.pnlPct!=null?(t.pnlPct>=0?'+':'')+t.pnlPct.toFixed(2)+'%':'—',
+      pc:t.pnl>=0?pos:neg,cum:this.fm(cum)}});
+    const tabBtns=[['ov','Genel Bakış'],['pf','Performans Özeti'],['tr','İşlem Listesi ('+tradeRows.length+')']]
+      .map(([id,label])=>({label,st:tabBtn(st.tab===id),on:()=>this.setState({tab:id})}));
+    const tiles=m?[
+      {l:'Net Kar',v:this.fm(m.net),s:(m.netPct>=0?'+':'')+m.netPct.toFixed(2)+'%',c:col(m.net)},
+      {l:'Toplam İşlem',v:String(m.total),s:m.wins+' kazanç / '+m.losses+' kayıp',c:'#d1d4dc'},
+      {l:'Kazanma Oranı',v:m.winRate.toFixed(1)+'%',s:'kapalı işlemler',c:m.winRate>=50?pos:neg},
+      {l:'Profit Factor',v:isFinite(m.pf)?m.pf.toFixed(2):'∞',s:'brüt kar / brüt zarar',c:m.pf>=1?pos:neg},
+      {l:'Maks. Düşüş',v:'−'+m.mddPct.toFixed(2)+'%',s:this.fm(-m.mdd),c:neg},
+      {l:'Sharpe Oranı',v:m.sharpe.toFixed(2),s:'yıllıklandırılmış',c:m.sharpe>=1?pos:'#d1d4dc'}
+    ]:[];
+    const perfItems=m?[
+      ['Net Kar',this.fm(m.net),col(m.net)],
+      ['Brüt Kar',this.fm(m.gp),pos],
+      ['Brüt Zarar',this.fm(-m.gl),neg],
+      ['Profit Factor',isFinite(m.pf)?m.pf.toFixed(2):'∞',m.pf>=1?pos:neg],
+      ['Toplam Komisyon',this.fm(-m.comm),'#d1d4dc'],
+      ['Ortalama İşlem',this.fm(m.avg),col(m.avg)],
+      ['Toplam İşlem',String(m.total),'#d1d4dc'],
+      ['Kazanan İşlem',String(m.wins),pos],
+      ['Kaybeden İşlem',String(m.losses),neg],
+      ['Kazanma Oranı',m.winRate.toFixed(1)+'%',m.winRate>=50?pos:neg],
+      ['Uzun İşlem',String(m.longs),'#d1d4dc'],
+      ['Kısa İşlem',String(m.shorts),'#d1d4dc'],
+      ['Maks. Düşüş ($)',this.fm(-m.mdd),neg],
+      ['Maks. Düşüş (%)','−'+m.mddPct.toFixed(2)+'%',neg],
+      ['Sharpe Oranı',m.sharpe.toFixed(2),m.sharpe>=1?pos:'#d1d4dc']
+    ].map(([l,v,c])=>({l,v,c})):[];
+    const F=(label,key,step,min)=>({label,step,min,val:st.form[key],
+      on:e=>{const v=e.target.value;this.setState({form:{...this.state.form,[key]:v===''?'':parseFloat(v)}})}});
+    const num=(v,d)=>typeof v==='number'&&!isNaN(v)?v:d;
+    const statusLeft=this.res?
+      st.symbol+' · '+st.tf+' · '+this.res.data.length+' bar · '+this.ft2(this.res.data[0].t)+' → '+this.ft2(this.res.data[this.res.data.length-1].t):'Yükleniyor…';
+    return {
+      symbol:st.symbol,
+      onSymbol:e=>this.setState({symbol:e.target.value},this.run),
+      tfBtns,tabBtns,tiles,perfItems,tradeRows,
+      tabOverview:st.tab==='ov',tabPerf:st.tab==='pf',tabTrades:st.tab==='tr',
+      dateFrom:st.dateFrom,dateTo:st.dateTo,
+      onDateFrom:e=>this.setState({dateFrom:e.target.value},this.run),
+      onDateTo:e=>this.setState({dateTo:e.target.value},this.run),
+      dir:st.form.dir,
+      onDir:e=>this.setState({form:{...this.state.form,dir:e.target.value}}),
+      stratFields:[F('Swing Uzunluğu (bar)','len',1,2),F('Bant 1 · σ çarpanı','m1',0.1,0.1),F('Bant 2 · σ çarpanı','m2',0.1,0.1)],
+      orderFields:[F('Sermaye ($)','capital',1000,1000),F('Pozisyon (%)','sizePct',5,1),F('Komisyon (%)','commPct',0.01,0)],
+      apply:()=>{const f=this.state.form,d=this.DEF;
+        const p={len:Math.max(2,Math.round(num(f.len,d.len))),m1:num(f.m1,d.m1),m2:num(f.m2,d.m2),
+          dir:f.dir,capital:Math.max(100,num(f.capital,d.capital)),
+          sizePct:Math.min(100,Math.max(1,num(f.sizePct,d.sizePct))),commPct:Math.max(0,num(f.commPct,d.commPct))};
+        this.setState({params:p,form:{...p}},this.run)},
+      reset:()=>this.setState({params:{...this.DEF},form:{...this.DEF}},this.run),
+      run:this.run,
+      ranLabel:st.ranAt?'Son çalıştırma: '+new Date(st.ranAt).toLocaleTimeString('tr-TR'):'',
+      statusLeft,
+      wrapRef:el=>{if(el&&el!==this.wrapEl){this.wrapEl=el;
+        this._ro=new ResizeObserver(()=>this.rq());this._ro.observe(el)}},
+      chartRef:el=>{if(el&&el!==this.chartEl){this.chartEl=el;
+        el.addEventListener('wheel',e=>{e.preventDefault();
+          if(!this.res||!this.view)return;
+          const r=el.getBoundingClientRect();
+          const fx=Math.max(0,Math.min(1,(e.clientX-r.left)/(r.width-62)));
+          const N=this.res.data.length,len=this.view.e-this.view.s;
+          const nl=Math.max(25,Math.min(N,Math.round(len*(e.deltaY>0?1.2:0.85))));
+          const c=this.view.s+len*fx;
+          let s=Math.round(c-nl*fx);s=Math.max(0,Math.min(N-nl,s));
+          this.view={s,e:s+nl};this.rq()},{passive:false});
+        this.rq()}},
+      eqRef:el=>{if(el)this.eqEl=el;this.rq()},
+      onMove:e=>{const r=e.currentTarget.getBoundingClientRect();
+        this.hover={mx:e.clientX-r.left,my:e.clientY-r.top};this.rq()},
+      onLeave:()=>{this.hover=null;this.rq()},
+      onDown:e=>{this.dragging=true;this.dragX=e.clientX;this.dragView={...this.view};e.preventDefault()}
+    };
+  }
+}
+</script>
+</body>
+</html>

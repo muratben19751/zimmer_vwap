@@ -1,1215 +1,1113 @@
-/* ==========================================================================
-   DSAVWAP (Zeiierman) — Interactive Frontend & Backtest Application Logic
-   With Full Support for NAU Project Local Data Provider (Catalog & Bybit)
-   ========================================================================== */
+/**
+ * Zimmer VWAP Backtester — Production Controller & Interactive Canvas Renderer
+ * Faithful implementation of Handoff design specification.
+ */
 
-document.addEventListener("DOMContentLoaded", () => {
-  // Initialize Lucide Icons
-  if (window.lucide) {
-    window.lucide.createIcons();
+import * as Engine from "./engine.js";
+
+(function () {
+  "use strict";
+
+  // --------------------------------------------------------------------------
+  // 1. State & Constants
+  // --------------------------------------------------------------------------
+  const MO = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
+  const DEF_PARAMS = {
+    len: 8,
+    m1: 1.0,
+    m2: 2.0,
+    dir: "both",
+    capital: 100000,
+    sizePct: 20,
+    commPct: 0.05,
+  };
+
+  const state = {
+    source: "synthetic", // "nau" | "synthetic" | "yahoo"
+    symbol: "BTCUSDT",
+    tf: "1h",
+    dateFrom: "",
+    dateTo: "",
+    tab: "overview", // "overview" | "perf" | "trades"
+    theme: localStorage.getItem("zvwap_theme") || "light",
+    params: { ...DEF_PARAMS },
+    form: { ...DEF_PARAMS },
+    ranAt: null,
+    nauCatalog: null,
+  };
+
+  let renderState = {
+    data: [],
+    vw: [],
+    trades: [],
+    equity: [],
+    met: null,
+    view: { s: 0, e: 0 },
+    hover: null,
+    dragging: false,
+    dragX: 0,
+    dragView: { s: 0, e: 0 },
+    rafId: 0,
+  };
+
+  // --------------------------------------------------------------------------
+  // 2. DOM Elements
+  // --------------------------------------------------------------------------
+  const htmlEl = document.documentElement;
+  const sourceSelect = document.getElementById("sourceSelect");
+  const symbolSelect = document.getElementById("symbolSelect");
+  const nauEquitiesGroup = document.getElementById("nauEquitiesGroup");
+  const nauBybitGroup = document.getElementById("nauBybitGroup");
+  const tfSegment = document.getElementById("tfSegment");
+  const dateFromInput = document.getElementById("dateFrom");
+  const dateToInput = document.getElementById("dateTo");
+  const themeSelect = document.getElementById("themeSelect");
+  const ranLabel = document.getElementById("ranLabel");
+  const btnRunBacktest = document.getElementById("btnRunBacktest");
+
+  const chartWrap = document.getElementById("chartWrap");
+  const chartCanvas = document.getElementById("chartCanvas");
+
+  const tabBtnOverview = document.getElementById("tabBtnOverview");
+  const tabBtnPerf = document.getElementById("tabBtnPerf");
+  const tabBtnTrades = document.getElementById("tabBtnTrades");
+  const contentOverview = document.getElementById("contentOverview");
+  const contentPerf = document.getElementById("contentPerf");
+  const contentTrades = document.getElementById("contentTrades");
+  const kpiTilesContainer = document.getElementById("kpiTilesContainer");
+  const equityWrap = document.getElementById("equityWrap");
+  const equityCanvas = document.getElementById("equityCanvas");
+  const perfGridContainer = document.getElementById("perfGridContainer");
+  const tradesRowsContainer = document.getElementById("tradesRowsContainer");
+  const btnExportCsv = document.getElementById("btnExportCsv");
+
+  const paramLen = document.getElementById("paramLen");
+  const paramM1 = document.getElementById("paramM1");
+  const paramM2 = document.getElementById("paramM2");
+  const paramDir = document.getElementById("paramDir");
+  const paramCapital = document.getElementById("paramCapital");
+  const paramSizePct = document.getElementById("paramSizePct");
+  const paramCommPct = document.getElementById("paramCommPct");
+  const btnApplyParams = document.getElementById("btnApplyParams");
+  const btnResetParams = document.getElementById("btnResetParams");
+
+  const statusLeft = document.getElementById("statusLeft");
+  const statusBadge = document.getElementById("statusBadge");
+
+  // --------------------------------------------------------------------------
+  // 3. Formatting Helpers
+  // --------------------------------------------------------------------------
+  function getDecimals(symbol) {
+    if (Engine.SYMBOLS[symbol]) return Engine.SYMBOLS[symbol].dec;
+    if (symbol.includes("EUR") || symbol.includes("GBP")) return 5;
+    if (symbol.includes("USD") && (symbol.includes("BTC") || symbol.includes("ETH"))) return 2;
+    return 2;
   }
 
-  // State
-  let chart = null;
-  let candleSeries = null;
-  let volumeSeries = null;
-  let vwapSeriesMap = new Map(); // segment_id -> lineSeries
+  function fp(v, sym = state.symbol) {
+    if (v == null || isNaN(v)) return "—";
+    const dec = getDecimals(sym);
+    return Number(v).toLocaleString("en-US", {
+      minimumFractionDigits: dec,
+      maximumFractionDigits: dec,
+    });
+  }
 
-  // Backtest Trades Chart (Candles + DSAVWAP + Trade Entry/Exit Markers)
-  let btTradesChart = null;
-  let btCandleSeries = null;
-  let btVolumeSeries = null;
-  let btVwapSeriesMap = new Map();
+  function fm(v) {
+    if (v == null || isNaN(v)) return "—";
+    const n = Number(v);
+    const sign = n < 0 ? "−" : "+";
+    return `${sign}$${Math.abs(n).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
 
-  // Equity Chart
-  let equityChart = null;
-  let equitySeries = null;
-  let benchmarkSeries = null;
+  function ft(t, tf = state.tf) {
+    if (!t) return "";
+    const d = new Date(t);
+    const dd = `${d.getUTCDate()} ${MO[d.getUTCMonth()]}`;
+    if (tf === "1D") return dd;
+    return `${dd} ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+  }
 
-  let currentMode = "chart"; // "chart" or "backtest"
-  let currentBtChartTab = "paneBtTrades"; // "paneBtTrades" or "paneBtEquity"
-  let currentTab = "tab-nau"; // "tab-nau" (default), "tab-ticker", "tab-csv", "tab-synthetic"
-  let currentData = null;
-  let currentBacktestData = null;
-  let uploadedFile = null;
+  function ft2(t, tf = state.tf) {
+    if (!t) return "";
+    const d = new Date(t);
+    const dd = `${d.getUTCDate()} ${MO[d.getUTCMonth()]} '${String(d.getUTCFullYear()).slice(2)}`;
+    if (tf === "1D") return dd;
+    return `${dd} ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+  }
 
-  // NAU Catalog State
-  let nauCatalog = null;
-  let nauCategory = "equity"; // "equity" or "bybit"
+  function niceTicks(min, max, n) {
+    const span = max - min;
+    if (span <= 0) return [];
+    const step0 = span / Math.max(2, n);
+    const mag = Math.pow(10, Math.floor(Math.log10(step0)));
+    const norm = step0 / mag;
+    const step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
+    const out = [];
+    for (let v = Math.ceil(min / step) * step; v <= max; v += step) {
+      out.push(v);
+    }
+    return out;
+  }
 
-  // DOM Elements
-  const container = document.getElementById("tvChartContainer");
-  const btTradesContainer = document.getElementById("tvBtTradesChartContainer");
-  const equityContainer = document.getElementById("tvEquityChartContainer");
-
-  const chartLoader = document.getElementById("chartLoader");
-  const btChartLoader = document.getElementById("btChartLoader");
-  const btTradesChartLoader = document.getElementById("btTradesChartLoader");
-
-  const chartHeaderTitle = document.getElementById("chartHeaderTitle");
-  const btTradesChartTitle = document.getElementById("btTradesChartTitle");
-  const btEquityChartTitle = document.getElementById("btEquityChartTitle");
-  const currentTickerName = document.getElementById("currentTickerName");
-  const currentTickerResolution = document.getElementById("currentTickerResolution");
-
-  // Mode Switcher
-  const btnModeChart = document.getElementById("btnModeChart");
-  const btnModeBacktest = document.getElementById("btnModeBacktest");
-  const viewChart = document.getElementById("viewChart");
-  const viewBacktest = document.getElementById("viewBacktest");
-  const backtestSettingsGroup = document.getElementById("backtestSettingsGroup");
-  const btnRecalculateText = document.getElementById("btnRecalculateText");
-
-  // Backtest Chart Tabs
-  const btnBtTabTrades = document.getElementById("btnBtTabTrades");
-  const btnBtTabEquity = document.getElementById("btnBtTabEquity");
-  const paneBtTrades = document.getElementById("paneBtTrades");
-  const paneBtEquity = document.getElementById("paneBtEquity");
-
-  // NAU Controls
-  const btnNauCatEquity = document.getElementById("btnNauCatEquity");
-  const btnNauCatBybit = document.getElementById("btnNauCatBybit");
-  const nauSymbolSelect = document.getElementById("nauSymbolSelect");
-  const nauQuickChips = document.getElementById("nauQuickChips");
-  const nauTimeframeSelect = document.getElementById("nauTimeframeSelect");
-  const nauLimitBarsSelect = document.getElementById("nauLimitBarsSelect");
-  const nauMetaTitle = document.getElementById("nauMetaTitle");
-  const nauMetaBadge = document.getElementById("nauMetaBadge");
-  const nauMetaDesc = document.getElementById("nauMetaDesc");
-
-  // Yahoo Inputs
-  const tickerInput = document.getElementById("tickerInput");
-  const periodSelect = document.getElementById("periodSelect");
-  const intervalSelect = document.getElementById("intervalSelect");
-
-  // DSAVWAP Param Sliders
-  const swingPeriodRange = document.getElementById("swingPeriodRange");
-  const valSwingPeriod = document.getElementById("valSwingPeriod");
-  const baseAptRange = document.getElementById("baseAptRange");
-  const valBaseApt = document.getElementById("valBaseApt");
-  const useAdaptToggle = document.getElementById("useAdaptToggle");
-  const volBiasRange = document.getElementById("volBiasRange");
-  const valVolBias = document.getElementById("valVolBias");
-  const volBiasGroup = document.getElementById("volBiasGroup");
-
-  // Backtest Inputs
-  const btStrategyType = document.getElementById("btStrategyType");
-  const btTradeMode = document.getElementById("btTradeMode");
-  const btInitialCapital = document.getElementById("btInitialCapital");
-  const btCommission = document.getElementById("btCommission");
-  const btStopLoss = document.getElementById("btStopLoss");
-  const btTakeProfit = document.getElementById("btTakeProfit");
-  const btTrailingStop = document.getElementById("btTrailingStop");
-
-  // Buttons
-  const btnRecalculate = document.getElementById("btnRecalculate");
-  const btnSearchTicker = document.getElementById("btnSearchTicker");
-  const btnGenerateSynthetic = document.getElementById("btnGenerateSynthetic");
-  const btnExportCsv = document.getElementById("btnExportCsv");
-  const btnExportTradesCsv = document.getElementById("btnExportTradesCsv");
-  const btnThemeToggle = document.getElementById("btnThemeToggle");
-  const themeIcon = document.getElementById("themeIcon");
-  const btnResetZoom = document.getElementById("btnResetZoom");
-  const btnResetBtTradesZoom = document.getElementById("btnResetBtTradesZoom");
-  const btnResetEquityZoom = document.getElementById("btnResetEquityZoom");
-
-  // CSV
-  const csvDropzone = document.getElementById("csvDropzone");
-  const csvFileInput = document.getElementById("csvFileInput");
-  const btnSelectFile = document.getElementById("btnSelectFile");
-  const selectedFileName = document.getElementById("selectedFileName");
-
-  // Chart Metrics
-  const metricPrice = document.getElementById("metricPrice");
-  const metricPriceChange = document.getElementById("metricPriceChange");
-  const metricVwap = document.getElementById("metricVwap");
-  const metricVwapDiff = document.getElementById("metricVwapDiff");
-  const metricRegime = document.getElementById("metricRegime");
-  const metricRegimeSub = document.getElementById("metricRegimeSub");
-  const metricPivotBadge = document.getElementById("metricPivotBadge");
-  const metricPivotPrice = document.getElementById("metricPivotPrice");
-  const metricTotalSegments = document.getElementById("metricTotalSegments");
-  const metricApt = document.getElementById("metricApt");
-
-  // Backtest Metrics
-  const btNetProfit = document.getElementById("btNetProfit");
-  const btBenchmarkReturn = document.getElementById("btBenchmarkReturn");
-  const btWinRate = document.getElementById("btWinRate");
-  const btTradesCount = document.getElementById("btTradesCount");
-  const btProfitFactor = document.getElementById("btProfitFactor");
-  const btWinLossRatio = document.getElementById("btWinLossRatio");
-  const btMaxDrawdown = document.getElementById("btMaxDrawdown");
-  const btMaxDrawdownUsd = document.getElementById("btMaxDrawdownUsd");
-  const btSharpeSortino = document.getElementById("btSharpeSortino");
-  const btAvgTrade = document.getElementById("btAvgTrade");
-
-  // Tables
-  const countAnchors = document.getElementById("countAnchors");
-  const countTrades = document.getElementById("countTrades");
-  const anchorsTableBody = document.getElementById("anchorsTableBody");
-  const barsTableBody = document.getElementById("barsTableBody");
-  const tradesTableBody = document.getElementById("tradesTableBody");
-
-  // --------------------------------------------------------------------------
-  // 1. Chart Initializations
-  // --------------------------------------------------------------------------
   function getThemeColors() {
-    const isDark = document.documentElement.getAttribute("data-theme") !== "light";
+    const cs = getComputedStyle(htmlEl);
     return {
-      bg: isDark ? "#161b22" : "#ffffff",
-      textColor: isDark ? "#8b949e" : "#57606a",
-      gridColor: isDark ? "#21262d" : "#edf0f2",
+      bgApp: cs.getPropertyValue("--bg-app").trim() || "#ffffff",
+      bgPanel: cs.getPropertyValue("--bg-panel").trim() || "#f7f8fb",
+      border: cs.getPropertyValue("--border").trim() || "#e0e3eb",
+      borderSubtle: cs.getPropertyValue("--border-subtle").trim() || "#eef0f5",
+      textStrong: cs.getPropertyValue("--text-strong").trim() || "#131722",
+      textMain: cs.getPropertyValue("--text-main").trim() || "#24293a",
+      textSecondary: cs.getPropertyValue("--text-secondary").trim() || "#50535e",
+      textMuted: cs.getPropertyValue("--text-muted").trim() || "#6f737f",
+      accent: cs.getPropertyValue("--accent").trim() || "#2962ff",
+      bull: cs.getPropertyValue("--bull").trim() || "#089981",
+      bear: cs.getPropertyValue("--bear").trim() || "#f23645",
+      bandFill: cs.getPropertyValue("--band-fill").trim() || "rgba(41,98,255,0.07)",
+      bandLine1: cs.getPropertyValue("--band-line1").trim() || "rgba(41,98,255,0.4)",
+      bandLine2: cs.getPropertyValue("--band-line2").trim() || "rgba(41,98,255,0.25)",
+      crosshairLine: cs.getPropertyValue("--crosshair-line").trim() || "#758696",
+      crosshairTagBg: cs.getPropertyValue("--crosshair-tag-bg").trim() || "#363a45",
+      crosshairTagText: cs.getPropertyValue("--crosshair-tag-text").trim() || "#ffffff",
     };
   }
 
-  function initChart() {
-    if (!window.LightweightCharts || !container) return;
-    if (chart) {
-      chart.remove();
-      chart = null;
-    }
-
-    const { bg, textColor, gridColor } = getThemeColors();
-
-    chart = window.LightweightCharts.createChart(container, {
-      width: container.clientWidth,
-      height: container.clientHeight,
-      layout: {
-        background: { color: bg },
-        textColor: textColor,
-        fontFamily: "'JetBrains Mono', monospace",
-        fontSize: 11,
-      },
-      grid: {
-        vertLines: { color: gridColor },
-        horzLines: { color: gridColor },
-      },
-      crosshair: {
-        mode: window.LightweightCharts.CrosshairMode.Normal,
-      },
-      timeScale: {
-        borderColor: gridColor,
-        timeVisible: true,
-        secondsVisible: false,
-      },
-      rightPriceScale: {
-        borderColor: gridColor,
-        autoScale: true,
-        scaleMargins: {
-          top: 0.1,
-          bottom: 0.2,
-        },
-      },
-    });
-
-    candleSeries = chart.addCandlestickSeries({
-      upColor: "#089981",
-      downColor: "#f23645",
-      borderUpColor: "#089981",
-      borderDownColor: "#f23645",
-      wickUpColor: "#089981",
-      wickDownColor: "#f23645",
-    });
-
-    volumeSeries = chart.addHistogramSeries({
-      priceFormat: { type: "volume" },
-      priceScaleId: "",
-      scaleMargins: {
-        top: 0.8,
-        bottom: 0,
-      },
-    });
-
-    window.addEventListener("resize", () => {
-      if (chart && container) {
-        chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
-      }
-      if (btTradesChart && btTradesContainer) {
-        btTradesChart.applyOptions({ width: btTradesContainer.clientWidth, height: btTradesContainer.clientHeight });
-      }
-      if (equityChart && equityContainer) {
-        equityChart.applyOptions({ width: equityContainer.clientWidth, height: equityContainer.clientHeight });
-      }
-    });
-  }
-
-  function initBtTradesChart() {
-    if (!window.LightweightCharts || !btTradesContainer) return;
-    if (btTradesChart) {
-      btTradesChart.remove();
-      btTradesChart = null;
-    }
-
-    const { bg, textColor, gridColor } = getThemeColors();
-
-    btTradesChart = window.LightweightCharts.createChart(btTradesContainer, {
-      width: btTradesContainer.clientWidth || 800,
-      height: btTradesContainer.clientHeight || 450,
-      layout: {
-        background: { color: bg },
-        textColor: textColor,
-        fontFamily: "'JetBrains Mono', monospace",
-        fontSize: 11,
-      },
-      grid: {
-        vertLines: { color: gridColor },
-        horzLines: { color: gridColor },
-      },
-      crosshair: {
-        mode: window.LightweightCharts.CrosshairMode.Normal,
-      },
-      timeScale: {
-        borderColor: gridColor,
-        timeVisible: true,
-        secondsVisible: false,
-      },
-      rightPriceScale: {
-        borderColor: gridColor,
-        autoScale: true,
-        scaleMargins: {
-          top: 0.1,
-          bottom: 0.2,
-        },
-      },
-    });
-
-    btCandleSeries = btTradesChart.addCandlestickSeries({
-      upColor: "#089981",
-      downColor: "#f23645",
-      borderUpColor: "#089981",
-      borderDownColor: "#f23645",
-      wickUpColor: "#089981",
-      wickDownColor: "#f23645",
-    });
-
-    btVolumeSeries = btTradesChart.addHistogramSeries({
-      priceFormat: { type: "volume" },
-      priceScaleId: "",
-      scaleMargins: {
-        top: 0.8,
-        bottom: 0,
-      },
-    });
-  }
-
-  function initEquityChart() {
-    if (!window.LightweightCharts || !equityContainer) return;
-    if (equityChart) {
-      equityChart.remove();
-      equityChart = null;
-    }
-
-    const { bg, textColor, gridColor } = getThemeColors();
-
-    equityChart = window.LightweightCharts.createChart(equityContainer, {
-      width: equityContainer.clientWidth || 800,
-      height: equityContainer.clientHeight || 450,
-      layout: {
-        background: { color: bg },
-        textColor: textColor,
-        fontFamily: "'JetBrains Mono', monospace",
-        fontSize: 11,
-      },
-      grid: {
-        vertLines: { color: gridColor },
-        horzLines: { color: gridColor },
-      },
-      timeScale: {
-        borderColor: gridColor,
-        timeVisible: true,
-        secondsVisible: false,
-      },
-      rightPriceScale: {
-        borderColor: gridColor,
-        autoScale: true,
-      },
-    });
-
-    equitySeries = equityChart.addLineSeries({
-      color: "#2962ff",
-      lineWidth: 2,
-      title: "DSAVWAP Stratejisi ($)",
-    });
-
-    benchmarkSeries = equityChart.addLineSeries({
-      color: "#8b949e",
-      lineWidth: 1,
-      lineStyle: 2,
-      title: "Al ve Tut ($)",
-    });
-  }
-
   // --------------------------------------------------------------------------
-  // 2. NAU Catalog Discovery & UI Rendering
+  // 4. Data Loading & Calculation
   // --------------------------------------------------------------------------
   async function fetchNauCatalog() {
     try {
       const res = await fetch("/api/nau/catalog");
-      if (!res.ok) throw new Error("NAU katalog bilgisi alınamadı");
-      nauCatalog = await res.json();
-      renderNauControls();
-    } catch (err) {
-      console.warn("NAU Catalog error:", err);
-      if (nauMetaDesc) {
-        nauMetaDesc.textContent = "NAU katalog verisi okunamadı: " + err.message;
-      }
+      if (!res.ok) return;
+      const cat = await res.json();
+      state.nauCatalog = cat;
+
+      nauEquitiesGroup.innerHTML = "";
+      (cat.equities || []).forEach((eq) => {
+        const opt = document.createElement("option");
+        opt.value = `nau:equity:${eq.symbol}`;
+        opt.textContent = `${eq.symbol} — (${eq.exchange}, ${eq.total_bars.toLocaleString()} Bar)`;
+        nauEquitiesGroup.appendChild(opt);
+      });
+
+      nauBybitGroup.innerHTML = "";
+      (cat.bybit || []).forEach((by) => {
+        const opt = document.createElement("option");
+        opt.value = `nau:bybit:${by.symbol}:${by.category}:${by.timeframe}`;
+        opt.textContent = `${by.symbol} [${by.category.toUpperCase()}] — (${by.timeframe}, ${by.total_bars.toLocaleString()} Bar)`;
+        nauBybitGroup.appendChild(opt);
+      });
+    } catch (e) {
+      console.warn("NAU katalog yüklenemedi:", e);
     }
   }
 
-  function renderNauControls() {
-    if (!nauCatalog) return;
+  async function loadDataAndCompute() {
+    ranLabel.textContent = "Hesaplanıyor…";
+    let rawBars = [];
 
-    const list = nauCategory === "equity" ? nauCatalog.equities : nauCatalog.bybit;
-    if (!list || list.length === 0) {
-      nauSymbolSelect.innerHTML = `<option value="">Veri bulunamadı</option>`;
-      return;
+    // Case 1: NAU Symbol
+    if (state.symbol.startsWith("nau:")) {
+      const parts = state.symbol.split(":");
+      const type = parts[1]; // "equity" | "bybit"
+      const sym = parts[2];
+      const category = parts[3] || "linear";
+
+      try {
+        const payload = {
+          data_source: "nau",
+          nau_symbol: sym,
+          nau_category: category,
+          nau_source: type === "equity" ? "equity_catalog" : "bybit",
+          nau_timeframe: state.tf,
+          nau_limit_bars: 1500,
+          swing_period: state.params.len * 5,
+        };
+
+        const res = await fetch("/api/calculate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (res.ok) {
+          const resData = await res.json();
+          rawBars = (resData.candles || []).map((c, i) => ({
+            t: c.time * 1000,
+            o: c.open,
+            h: c.high,
+            l: c.low,
+            c: c.close,
+            v: resData.volumes[i] ? resData.volumes[i].value : 1000,
+          }));
+          statusBadge.textContent = `${resData.source} — Canlı Veri`;
+          statusBadge.className = "status-badge-demo bull-text";
+        }
+      } catch (err) {
+        console.error("NAU API hatası:", err);
+      }
     }
 
-    // Save previous selection if exists in new list
-    const prevSym = nauSymbolSelect.value;
-    let selectedItem = list[0];
+    // Fallback or Synthetic
+    if (!rawBars || rawBars.length === 0) {
+      const cleanSym = state.symbol.replace(/^nau:[^:]+:/, "").split(":")[0] || "BTCUSDT";
+      rawBars = Engine.genData(cleanSym, state.tf, 420);
+      statusBadge.textContent = "Sentetik örnek veri — demo";
+      statusBadge.className = "status-badge-demo";
+    }
 
-    // Populate Symbol Select Dropdown
-    nauSymbolSelect.innerHTML = "";
-    list.forEach((item) => {
-      const opt = document.createElement("option");
-      opt.value = item.symbol;
-      if (nauCategory === "equity") {
-        opt.textContent = `${item.symbol} — (${item.venue || 'NASDAQ'}, ${item.total_bars ? item.total_bars.toLocaleString() + ' Bar' : 'Arşiv'})`;
+    // Date Filtering
+    let data = rawBars;
+    if (state.dateFrom) {
+      const tFrom = Date.parse(state.dateFrom);
+      if (!isNaN(tFrom)) data = data.filter((b) => b.t >= tFrom);
+    }
+    if (state.dateTo) {
+      const tTo = Date.parse(state.dateTo);
+      if (!isNaN(tTo)) data = data.filter((b) => b.t <= tTo + 86400000);
+    }
+    if (data.length < 40) data = rawBars;
+
+    // Calculations via Engine
+    const swings = Engine.computeSwings(data, state.params.len);
+    const vw = Engine.computeVWAP(data, swings, state.params.m1, state.params.m2);
+    const bt = Engine.backtest(data, vw, state.params);
+    const met = Engine.metrics(bt.trades, bt.equity, state.params.capital, state.tf);
+    met.comm = bt.commTotal;
+
+    const n = data.length;
+    renderState.data = data;
+    renderState.vw = vw;
+    renderState.trades = bt.trades;
+    renderState.equity = bt.equity;
+    renderState.met = met;
+    renderState.view = { s: Math.max(0, n - 170), e: n };
+
+    state.ranAt = Date.now();
+    ranLabel.textContent = `Son çalıştırma: ${new Date(state.ranAt).toLocaleTimeString("tr-TR")}`;
+
+    // Update Status Bar Left
+    const cleanName = state.symbol.replace(/^nau:[^:]+:/, "");
+    statusLeft.textContent = `${cleanName} · ${state.tf} · ${data.length} bar · ${ft2(data[0].t)} → ${ft2(data[data.length - 1].t)}`;
+
+    // Render UI Panels
+    renderKpiTiles(met);
+    renderPerformanceSummary(met);
+    renderTradesTable(bt.trades, data);
+
+    requestDraw();
+  }
+
+  // --------------------------------------------------------------------------
+  // 5. Drawing & Canvas Rendering
+  // --------------------------------------------------------------------------
+  function requestDraw() {
+    if (renderState.rafId) return;
+    renderState.rafId = requestAnimationFrame(() => {
+      renderState.rafId = 0;
+      drawChart();
+      drawEquity();
+    });
+  }
+
+  function drawChart() {
+    const cv = chartCanvas;
+    const { data, vw, trades, view, hover } = renderState;
+    if (!cv || !data.length || !view.e) return;
+
+    const wrap = chartWrap;
+    const W = wrap.clientWidth;
+    const H = wrap.clientHeight;
+    if (W < 60 || H < 60) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = W * dpr;
+    cv.height = H * dpr;
+    const g = cv.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const colors = getThemeColors();
+    g.fillStyle = colors.bgApp;
+    g.fillRect(0, 0, W, H);
+
+    const AX = 62;
+    const TB = 24;
+    const pw = W - AX;
+    const ph = H - TB;
+    const v0 = view.s;
+    const v1 = view.e;
+    const n = v1 - v0;
+
+    // Price Bounds
+    let lo = 1e18;
+    let hi = -1e18;
+    let maxV = 0;
+    for (let i = v0; i < v1; i++) {
+      const b = data[i];
+      if (b.l < lo) lo = b.l;
+      if (b.h > hi) hi = b.h;
+      if (b.v > maxV) maxV = b.v;
+      const w = vw[i];
+      if (w) {
+        if (w.l2 < lo) lo = w.l2;
+        if (w.u2 > hi) hi = w.u2;
+      }
+    }
+    const pad = (hi - lo) * 0.08 || 1;
+    lo -= pad;
+    hi += pad;
+
+    const x = (i) => ((i - v0 + 0.5) * pw) / n;
+    const y = (p) => ph * (1 - (p - lo) / (hi - lo));
+    const font = getComputedStyle(htmlEl).fontFamily || "-apple-system, Segoe UI, sans-serif";
+
+    // 1. Grid & Price Axis Ticks
+    g.font = `10px ${font}`;
+    g.textBaseline = "middle";
+    const ticks = niceTicks(lo + pad * 0.4, hi - pad * 0.4, ph / 56);
+    for (const t of ticks) {
+      const yy = y(t);
+      g.strokeStyle = colors.borderSubtle;
+      g.beginPath();
+      g.moveTo(0, yy);
+      g.lineTo(pw, yy);
+      g.stroke();
+
+      g.fillStyle = colors.textMuted;
+      g.textAlign = "left";
+      g.fillText(fp(t), pw + 6, yy);
+    }
+
+    // 2. Time Axis Grid & Labels
+    const every = Math.max(1, Math.round(92 / (pw / n)));
+    g.textAlign = "center";
+    g.textBaseline = "top";
+    for (let i = v0; i < v1; i++) {
+      if (i % every !== 0) continue;
+      const xx = x(i);
+      g.strokeStyle = colors.borderSubtle;
+      g.beginPath();
+      g.moveTo(xx, 0);
+      g.lineTo(xx, ph);
+      g.stroke();
+
+      g.fillStyle = colors.textMuted;
+      g.fillText(ft(data[i].t), xx, ph + 7);
+    }
+
+    // 3. Volume Bars (Bottom 15%)
+    const vh = ph * 0.15;
+    const bw2 = Math.max(1, (pw / n) * 0.7);
+    for (let i = v0; i < v1; i++) {
+      const b = data[i];
+      g.fillStyle = b.c >= b.o ? "rgba(8,153,129,0.28)" : "rgba(242,54,69,0.28)";
+      const h2 = (b.v / maxV) * vh;
+      g.fillRect(x(i) - bw2 / 2, ph - h2, bw2, h2);
+    }
+
+    // 4. DSAVWAP Bands & Curves (grouped into segments by anchor)
+    const segs = [];
+    let seg = [];
+    let curAnchor = null;
+    for (let i = v0; i < v1; i++) {
+      const w = vw[i];
+      if (!w) {
+        if (seg.length) {
+          segs.push(seg);
+          seg = [];
+        }
+        curAnchor = null;
+        continue;
+      }
+      if (curAnchor !== null && w.aI !== curAnchor && seg.length) {
+        segs.push(seg);
+        seg = [];
+      }
+      curAnchor = w.aI;
+      seg.push([i, w]);
+    }
+    if (seg.length) segs.push(seg);
+
+    for (const s of segs) {
+      if (s.length > 1) {
+        // Shaded Band Fill between +1σ and -1σ
+        g.beginPath();
+        s.forEach(([i, w], k) => {
+          k ? g.lineTo(x(i), y(w.u1)) : g.moveTo(x(i), y(w.u1));
+        });
+        for (let k = s.length - 1; k >= 0; k--) {
+          g.lineTo(x(s[k][0]), y(s[k][1].l1));
+        }
+        g.closePath();
+        g.fillStyle = colors.bandFill;
+        g.fill();
+
+        // ±1σ solid and ±2σ dashed lines
+        const drawBandLine = (key, strokeStyle, dash) => {
+          g.beginPath();
+          s.forEach(([i, w], k) => {
+            k ? g.lineTo(x(i), y(w[key])) : g.moveTo(x(i), y(w[key]));
+          });
+          g.strokeStyle = strokeStyle;
+          g.lineWidth = 1;
+          g.setLineDash(dash);
+          g.stroke();
+          g.setLineDash([]);
+        };
+
+        drawBandLine("u1", colors.bandLine1, []);
+        drawBandLine("l1", colors.bandLine1, []);
+        drawBandLine("u2", colors.bandLine2, [4, 4]);
+        drawBandLine("l2", colors.bandLine2, [4, 4]);
+      }
+
+      // DSAVWAP Center Line
+      g.beginPath();
+      s.forEach(([i, w], k) => {
+        k ? g.lineTo(x(i), y(w.v)) : g.moveTo(x(i), y(w.v));
+      });
+      g.strokeStyle = s[0][1].aType === "L" ? colors.bull : colors.bear;
+      g.lineWidth = 1.6;
+      g.stroke();
+      g.lineWidth = 1;
+
+      // Anchor Diamond Marker
+      const aI = s[0][1].aI;
+      if (aI >= v0 && aI < v1) {
+        const ap = s[0][1].aType === "L" ? data[aI].l : data[aI].h;
+        const ax = x(aI);
+        const ay = y(ap) + (s[0][1].aType === "L" ? 8 : -8);
+        g.beginPath();
+        g.moveTo(ax, ay - 5);
+        g.lineTo(ax + 5, ay);
+        g.lineTo(ax, ay + 5);
+        g.lineTo(ax - 5, ay);
+        g.closePath();
+        g.fillStyle = s[0][1].aType === "L" ? colors.bull : colors.bear;
+        g.fill();
+      }
+    }
+
+    // 5. Candlesticks
+    const bw = Math.max(1, Math.min(11, (pw / n) * 0.7));
+    for (let i = v0; i < v1; i++) {
+      const b = data[i];
+      const up = b.c >= b.o;
+      const col = up ? colors.bull : colors.bear;
+      const xx = x(i);
+
+      // Wicks
+      g.strokeStyle = col;
+      g.beginPath();
+      g.moveTo(xx, y(b.h));
+      g.lineTo(xx, y(b.l));
+      g.stroke();
+
+      // Body
+      g.fillStyle = col;
+      g.fillRect(xx - bw / 2, Math.min(y(b.o), y(b.c)), bw, Math.max(1, Math.abs(y(b.o) - y(b.c))));
+    }
+
+    // 6. Trade Markers (Triangles, Exit Squares & Connection Lines)
+    const drawTriangle = (xx, yy, upDir, col) => {
+      g.beginPath();
+      if (upDir) {
+        g.moveTo(xx, yy - 5);
+        g.lineTo(xx + 5, yy + 4);
+        g.lineTo(xx - 5, yy + 4);
       } else {
-        opt.textContent = `${item.name || item.symbol} — (${item.category.toUpperCase()})`;
+        g.moveTo(xx, yy + 5);
+        g.lineTo(xx + 5, yy - 4);
+        g.lineTo(xx - 5, yy - 4);
       }
-      if (item.symbol === prevSym || (nauCategory === "equity" && item.symbol === "NVDA") || (nauCategory === "bybit" && item.symbol === "BTCUSDT")) {
-        opt.selected = true;
-        selectedItem = item;
-      }
-      nauSymbolSelect.appendChild(opt);
-    });
-
-    // Populate Quick Chips
-    nauQuickChips.innerHTML = "";
-    const popularSymbols = nauCategory === "equity" 
-      ? ["NVDA", "AAPL", "QQQC", "SPY", "TSLA", "AMD", "MSFT", "AMZN"]
-      : ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"];
-
-    popularSymbols.forEach((sym) => {
-      const exists = list.some((it) => it.symbol === sym);
-      if (exists) {
-        const chip = document.createElement("span");
-        chip.className = `chip ${sym === selectedItem.symbol ? "active" : ""}`;
-        chip.textContent = sym.replace("USDT", "");
-        chip.dataset.symbol = sym;
-        chip.addEventListener("click", () => {
-          document.querySelectorAll("#nauQuickChips .chip").forEach((c) => c.classList.remove("active"));
-          chip.classList.add("active");
-          nauSymbolSelect.value = sym;
-          updateNauTimeframes();
-          executeAction();
-        });
-        nauQuickChips.appendChild(chip);
-      }
-    });
-
-    updateNauTimeframes();
-  }
-
-  function updateNauTimeframes() {
-    if (!nauCatalog) return;
-    const list = nauCategory === "equity" ? nauCatalog.equities : nauCatalog.bybit;
-    const sym = nauSymbolSelect.value;
-    const item = list.find((it) => it.symbol === sym) || list[0];
-
-    if (!item) return;
-
-    // Available Timeframes
-    const availableTfs = item.timeframes || ["1d", "1h", "15m", "5m", "1m"];
-    const currentTf = nauTimeframeSelect.value;
-
-    nauTimeframeSelect.innerHTML = "";
-    const tfLabels = {
-      "1m": "1 Dakika (1m)",
-      "5m": "5 Dakika (5m)",
-      "15m": "15 Dakika (15m)",
-      "30m": "30 Dakika (30m)",
-      "1h": "1 Saat (1h)",
-      "4h": "4 Saat (4h)",
-      "1d": "1 Gün (1d)",
-      "1wk": "1 Hafta (1wk)",
+      g.closePath();
+      g.fillStyle = col;
+      g.fill();
     };
 
-    availableTfs.forEach((tf) => {
-      const opt = document.createElement("option");
-      opt.value = tf;
-      opt.textContent = tfLabels[tf] || tf;
-      if (tf === currentTf || (tf === "1h" && !availableTfs.includes(currentTf)) || (tf === "1d" && !availableTfs.includes(currentTf))) {
-        opt.selected = true;
+    for (const t of trades) {
+      const inEntry = t.ei >= v0 && t.ei < v1;
+      const inExit = t.xi != null && t.xi >= v0 && t.xi < v1;
+
+      // Dashed trade line
+      if (inEntry && t.xi != null && (inExit || t.xi >= v1)) {
+        g.beginPath();
+        g.moveTo(x(t.ei), y(t.entry));
+        g.lineTo(x(Math.min(t.xi, v1 - 1)), y(t.exit ?? t.entry));
+        g.strokeStyle = t.pnl >= 0 ? "rgba(8,153,129,0.55)" : "rgba(242,54,69,0.55)";
+        g.setLineDash([3, 3]);
+        g.stroke();
+        g.setLineDash([]);
       }
-      nauTimeframeSelect.appendChild(opt);
+
+      // Entry Marker
+      if (inEntry) {
+        if (t.side === "L") {
+          drawTriangle(x(t.ei), y(data[t.ei].l) + 12, true, colors.bull);
+        } else {
+          drawTriangle(x(t.ei), y(data[t.ei].h) - 12, false, colors.bear);
+        }
+      }
+
+      // Exit Marker
+      if (inExit) {
+        const xx = x(t.xi);
+        const yy = t.side === "L" ? y(data[t.xi].h) - 10 : y(data[t.xi].l) + 10;
+        g.fillStyle = "#50535e";
+        g.fillRect(xx - 3, yy - 3, 6, 6);
+      }
+    }
+
+    // 7. Crosshair & Dynamic Values
+    let hb = v1 - 1;
+    if (hover && hover.mx < pw && hover.my < ph) {
+      hb = Math.max(v0, Math.min(v1 - 1, Math.round((hover.mx / pw) * n + v0 - 0.5)));
+      const cx = x(hb);
+      const cy = hover.my;
+
+      g.strokeStyle = colors.crosshairLine;
+      g.setLineDash([4, 4]);
+      g.beginPath();
+      g.moveTo(cx, 0);
+      g.lineTo(cx, ph);
+      g.moveTo(0, cy);
+      g.lineTo(pw, cy);
+      g.stroke();
+      g.setLineDash([]);
+
+      // Price Tag on Right Axis
+      const pv = lo + (1 - cy / ph) * (hi - lo);
+      g.fillStyle = colors.crosshairTagBg;
+      g.fillRect(pw, cy - 9, AX, 18);
+      g.fillStyle = colors.crosshairTagText;
+      g.textAlign = "left";
+      g.textBaseline = "middle";
+      g.font = `10px ${font}`;
+      g.fillText(fp(pv), pw + 6, cy);
+
+      // Time Tag on Bottom Axis
+      const tl = ft2(data[hb].t);
+      const tw = g.measureText(tl).width + 14;
+      g.fillStyle = colors.crosshairTagBg;
+      g.fillRect(cx - tw / 2, ph, tw, TB - 2);
+      g.fillStyle = colors.crosshairTagText;
+      g.textAlign = "center";
+      g.fillText(tl, cx, ph + 11);
+    }
+
+    // 8. Legend (Top-Left)
+    const B = data[hb];
+    const Wv = vw[hb];
+    g.textAlign = "left";
+    g.textBaseline = "alphabetic";
+    g.font = `700 12px ${font}`;
+    g.fillStyle = colors.textStrong;
+    const cleanSym = state.symbol.replace(/^nau:[^:]+:/, "");
+    g.fillText(`${cleanSym} · ${state.tf} · Zimmer VWAP Stratejisi`, 10, 20);
+
+    g.font = `11px ${font}`;
+    let lx = 10;
+    const cc = B.c >= B.o ? colors.bull : colors.bear;
+    [
+      ["A", B.o],
+      ["Y", B.h],
+      ["D", B.l],
+      ["K", B.c],
+    ].forEach(([k, val]) => {
+      g.fillStyle = colors.textMuted;
+      g.fillText(k, lx, 38);
+      lx += g.measureText(k).width + 3;
+      g.fillStyle = cc;
+      const s = fp(val);
+      g.fillText(s, lx, 38);
+      lx += g.measureText(s).width + 10;
     });
 
-    // Update Metadata Card
-    if (nauCategory === "equity") {
-      nauMetaTitle.textContent = `${item.symbol} (${item.venue || 'NASDAQ'})`;
-      nauMetaBadge.textContent = item.adjusted ? "Split-Adjusted" : "Unadjusted";
-      nauMetaBadge.style.color = item.adjusted ? "#089981" : "#f23645";
-      nauMetaDesc.innerHTML = `<strong>Tarih:</strong> ${item.first_date || 'N/A'} → ${item.last_date || 'N/A'}<br>` +
-                              `<strong>Toplam Bar:</strong> ${item.total_bars ? item.total_bars.toLocaleString() : 'N/A'}<br>` +
-                              `<strong>Not:</strong> ${item.note || 'Massive / Polygon'}`;
-    } else {
-      nauMetaTitle.textContent = `${item.symbol} [${(item.category || 'LINEAR').toUpperCase()}]`;
-      nauMetaBadge.textContent = "Bybit Kline Cache";
-      nauMetaBadge.style.color = "#58a6ff";
-      nauMetaDesc.innerHTML = `<strong>Kaynak:</strong> Bybit v5 Kline Arşivi<br>` +
-                              `<strong>Kategori:</strong> ${item.category}<br>` +
-                              `<strong>Zaman Dilimleri:</strong> ${item.timeframes.join(', ')}`;
+    if (Wv) {
+      g.fillStyle = Wv.aType === "L" ? colors.bull : colors.bear;
+      g.fillText(
+        `VWAP ${fp(Wv.v)}  ·  Çapa: ${Wv.aType === "L" ? "Swing Dip" : "Swing Tepe"} (${ft(data[Wv.aI].t)})`,
+        10,
+        54
+      );
+      g.fillStyle = colors.textMuted;
+      g.fillText(
+        `+1σ ${fp(Wv.u1)}   −1σ ${fp(Wv.l1)}   ±2σ bantları kesikli`,
+        10,
+        69
+      );
     }
+
+    // 9. Axis Border Lines
+    g.strokeStyle = colors.border;
+    g.beginPath();
+    g.moveTo(pw + 0.5, 0);
+    g.lineTo(pw + 0.5, H);
+    g.moveTo(0, ph + 0.5);
+    g.lineTo(W, ph + 0.5);
+    g.stroke();
   }
 
-  // NAU Category Toggle
-  btnNauCatEquity.addEventListener("click", () => {
-    nauCategory = "equity";
-    btnNauCatEquity.classList.add("active");
-    btnNauCatBybit.classList.remove("active");
-    renderNauControls();
-    executeAction();
-  });
+  function drawEquity() {
+    const cv = equityCanvas;
+    const { equity } = renderState;
+    if (!cv || !equity || !equity.length || state.tab !== "overview") return;
 
-  btnNauCatBybit.addEventListener("click", () => {
-    nauCategory = "bybit";
-    btnNauCatBybit.classList.add("active");
-    btnNauCatEquity.classList.remove("active");
-    renderNauControls();
-    executeAction();
-  });
+    const wrap = equityWrap;
+    const W = wrap.clientWidth;
+    const H = wrap.clientHeight;
+    if (W < 40 || H < 40) return;
 
-  nauSymbolSelect.addEventListener("change", () => {
-    updateNauTimeframes();
-    document.querySelectorAll("#nauQuickChips .chip").forEach((c) => {
-      c.classList.toggle("active", c.dataset.symbol === nauSymbolSelect.value);
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = W * dpr;
+    cv.height = H * dpr;
+    const g = cv.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const colors = getThemeColors();
+    g.fillStyle = colors.bgApp;
+    g.fillRect(0, 0, W, H);
+
+    const AX = 70;
+    const PT = 22;
+    const PB = 8;
+    const pw = W - AX;
+    const ph = H - PT - PB;
+
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const e of equity) {
+      if (e.v < lo) lo = e.v;
+      if (e.v > hi) hi = e.v;
+    }
+    const cap = state.params.capital;
+    lo = Math.min(lo, cap);
+    hi = Math.max(hi, cap);
+    const pad = (hi - lo) * 0.1 || 1;
+    lo -= pad;
+    hi += pad;
+
+    const x = (i) => (i / (equity.length - 1)) * pw;
+    const y = (v) => PT + ph * (1 - (v - lo) / (hi - lo));
+    const font = getComputedStyle(htmlEl).fontFamily || "-apple-system, Segoe UI, sans-serif";
+
+    // Horizontal Ticks
+    g.font = `10px ${font}`;
+    g.textBaseline = "middle";
+    for (const t of niceTicks(lo, hi, ph / 44)) {
+      const yy = y(t);
+      g.strokeStyle = colors.borderSubtle;
+      g.beginPath();
+      g.moveTo(0, yy);
+      g.lineTo(pw, yy);
+      g.stroke();
+
+      g.fillStyle = colors.textMuted;
+      g.textAlign = "left";
+      g.fillText(`$${Math.round(t).toLocaleString("en-US")}`, pw + 6, yy);
+    }
+
+    // Capital Baseline (dashed)
+    g.strokeStyle = colors.textMuted;
+    g.setLineDash([4, 4]);
+    g.beginPath();
+    g.moveTo(0, y(cap));
+    g.lineTo(pw, y(cap));
+    g.stroke();
+    g.setLineDash([]);
+
+    // Gradient Area Fill
+    const grad = g.createLinearGradient(0, PT, 0, PT + ph);
+    grad.addColorStop(0, "rgba(41, 98, 255, 0.28)");
+    grad.addColorStop(1, "rgba(41, 98, 255, 0)");
+    g.beginPath();
+    equity.forEach((e, i) => {
+      i ? g.lineTo(x(i), y(e.v)) : g.moveTo(x(i), y(e.v));
     });
-    executeAction();
-  });
+    g.lineTo(pw, PT + ph);
+    g.lineTo(0, PT + ph);
+    g.closePath();
+    g.fillStyle = grad;
+    g.fill();
 
-  nauTimeframeSelect.addEventListener("change", executeAction);
-  nauLimitBarsSelect.addEventListener("change", executeAction);
+    // Equity Line
+    g.beginPath();
+    equity.forEach((e, i) => {
+      i ? g.lineTo(x(i), y(e.v)) : g.moveTo(x(i), y(e.v));
+    });
+    g.strokeStyle = colors.accent;
+    g.lineWidth = 1.6;
+    g.stroke();
+    g.lineWidth = 1;
 
-  // --------------------------------------------------------------------------
-  // 3. Calculation & Backtest Triggers
-  // --------------------------------------------------------------------------
-  function executeAction() {
-    if (currentMode === "chart") {
-      loadChartData();
-    } else {
-      runBacktest();
-    }
+    // Header Label
+    g.font = `700 11px ${font}`;
+    g.fillStyle = colors.textSecondary;
+    g.textAlign = "left";
+    g.textBaseline = "alphabetic";
+    g.fillText("Özkaynak Eğrisi", 10, 15);
+
+    const last = equity[equity.length - 1].v;
+    g.fillStyle = last >= cap ? colors.bull : colors.bear;
+    g.fillText(fm(last - cap), 110, 15);
   }
 
-  async function loadChartData() {
-    chartLoader.classList.add("active");
+  // --------------------------------------------------------------------------
+  // 6. Strategy Tester Views
+  // --------------------------------------------------------------------------
+  function renderKpiTiles(m) {
+    if (!m) return;
+    const pos = "bull-text";
+    const neg = "bear-text";
 
-    const payload = {
-      data_source: "nau",
-      swing_period: parseInt(swingPeriodRange.value),
-      base_apt: parseFloat(baseAptRange.value),
-      use_adapt: useAdaptToggle.checked,
-      vol_bias: parseFloat(volBiasRange.value),
-    };
+    const tiles = [
+      {
+        l: "Net Kar",
+        v: fm(m.net),
+        s: `${m.netPct >= 0 ? "+" : ""}${m.netPct.toFixed(2)}%`,
+        c: m.net >= 0 ? pos : neg,
+      },
+      {
+        l: "Toplam İşlem",
+        v: String(m.total),
+        s: `${m.wins} kazanç / ${m.losses} kayıp`,
+        c: "",
+      },
+      {
+        l: "Kazanma Oranı",
+        v: `${m.winRate.toFixed(1)}%`,
+        s: "kapalı işlemler",
+        c: m.winRate >= 50 ? pos : neg,
+      },
+      {
+        l: "Profit Factor",
+        v: isFinite(m.pf) ? m.pf.toFixed(2) : "∞",
+        s: "brüt kar / brüt zarar",
+        c: m.pf >= 1 ? pos : neg,
+      },
+      {
+        l: "Maks. Düşüş",
+        v: `−${m.mddPct.toFixed(2)}%`,
+        s: fm(-m.mdd),
+        c: neg,
+      },
+      {
+        l: "Sharpe Oranı",
+        v: m.sharpe.toFixed(2),
+        s: "yıllıklandırılmış",
+        c: m.sharpe >= 1 ? pos : "",
+      },
+    ];
 
-    try {
-      let res;
-      if (currentTab === "tab-nau") {
-        payload.data_source = "nau";
-        payload.nau_symbol = nauSymbolSelect.value || "NVDA";
-        payload.nau_timeframe = nauTimeframeSelect.value || "1d";
-        payload.nau_category = nauCategory;
-        payload.nau_source = nauCategory === "equity" ? "equity_catalog" : "bybit";
-        payload.nau_limit_bars = parseInt(nauLimitBarsSelect.value) || 1000;
-        payload.use_synthetic = false;
+    kpiTilesContainer.innerHTML = tiles
+      .map(
+        (t) => `
+      <div class="metric-tile">
+        <div class="metric-tile-label">${t.l}</div>
+        <div class="metric-tile-value ${t.c}">${t.v}</div>
+        <div class="metric-tile-sub">${t.s}</div>
+      </div>
+    `
+      )
+      .join("");
+  }
 
-        res = await fetch("/api/calculate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
+  function renderPerformanceSummary(m) {
+    if (!m) return;
+    const pos = "bull-text";
+    const neg = "bear-text";
+    const col = (v) => (v >= 0 ? pos : neg);
 
-      } else if (currentTab === "tab-csv" && uploadedFile) {
-        const formData = new FormData();
-        formData.append("file", uploadedFile);
-        formData.append("swing_period", payload.swing_period);
-        formData.append("base_apt", payload.base_apt);
-        formData.append("use_adapt", payload.use_adapt);
-        formData.append("vol_bias", payload.vol_bias);
+    const items = [
+      ["Net Kar", fm(m.net), col(m.net)],
+      ["Brüt Kar", fm(m.gp), pos],
+      ["Brüt Zarar", fm(-m.gl), neg],
+      ["Profit Factor", isFinite(m.pf) ? m.pf.toFixed(2) : "∞", m.pf >= 1 ? pos : neg],
+      ["Toplam Komisyon", fm(-m.comm), ""],
+      ["Ortalama İşlem", fm(m.avg), col(m.avg)],
+      ["Toplam İşlem", String(m.total), ""],
+      ["Kazanan İşlem", String(m.wins), pos],
+      ["Kaybeden İşlem", String(m.losses), neg],
+      ["Kazanma Oranı", `${m.winRate.toFixed(1)}%`, m.winRate >= 50 ? pos : neg],
+      ["Uzun İşlem", String(m.longs), ""],
+      ["Kısa İşlem", String(m.shorts), ""],
+      ["Maks. Düşüş ($)", fm(-m.mdd), neg],
+      ["Maks. Düşüş (%)", `−${m.mddPct.toFixed(2)}%`, neg],
+      ["Sharpe Oranı", m.sharpe.toFixed(2), m.sharpe >= 1 ? pos : ""],
+    ];
 
-        res = await fetch("/api/upload", { method: "POST", body: formData });
+    perfGridContainer.innerHTML = items
+      .map(
+        ([label, val, cls]) => `
+      <div class="perf-row">
+        <span class="perf-label">${label}</span>
+        <span class="perf-value ${cls}">${val}</span>
+      </div>
+    `
+      )
+      .join("");
+  }
 
-      } else if (currentTab === "tab-synthetic") {
-        payload.data_source = "synthetic";
-        payload.use_synthetic = true;
-        res = await fetch("/api/calculate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
+  function renderTradesTable(trades, data) {
+    const pos = "bull-text";
+    const neg = "bear-text";
+    let cum = 0;
 
+    tabBtnTrades.textContent = `İşlem Listesi (${trades.length})`;
+
+    tradesRowsContainer.innerHTML = trades
+      .map((t, i) => {
+        cum += t.pnl;
+        const isLong = t.side === "L";
+        const isWin = t.pnl >= 0;
+        const entryTime = data[t.ei] ? ft2(data[t.ei].t) : "—";
+        const exitTime = t.xi != null && data[t.xi] ? ft2(data[t.xi].t) : "—";
+
+        return `
+        <div class="trade-row">
+          <span style="color: var(--text-muted)">${i + 1}</span>
+          <span style="font-weight: 700;" class="${isLong ? pos : neg}">${isLong ? "Uzun" : "Kısa"}</span>
+          <span style="color: var(--text-secondary)">${entryTime}</span>
+          <span class="align-right">${fp(t.entry)}</span>
+          <span class="pad-l-16" style="color: var(--text-secondary)">${exitTime}</span>
+          <span class="align-right">${t.exit != null ? fp(t.exit) : "—"}</span>
+          <span class="pad-l-16" style="color: var(--text-muted); font-family: var(--font-ui);">${t.reason}</span>
+          <span class="align-right ${isWin ? pos : neg}" style="font-weight: 600;">${fm(t.pnl)}</span>
+          <span class="align-right ${isWin ? pos : neg}">${t.pnlPct != null ? (t.pnlPct >= 0 ? "+" : "") + t.pnlPct.toFixed(2) + "%" : "—"}</span>
+          <span class="align-right" style="color: var(--text-secondary)">${fm(cum)}</span>
+        </div>
+      `;
+      })
+      .join("");
+  }
+
+  // --------------------------------------------------------------------------
+  // 7. Pan & Zoom Event Handlers
+  // --------------------------------------------------------------------------
+  function pan(cx) {
+    const el = chartCanvas;
+    const { data, dragView, dragX } = renderState;
+    if (!el || !data.length) return;
+    const r = el.getBoundingClientRect();
+    const perBar = (r.width - 62) / (dragView.e - dragView.s);
+    const bars = Math.round((cx - dragX) / perBar);
+    if (!bars) return;
+
+    const n = data.length;
+    const len = dragView.e - dragView.s;
+    const s = Math.max(0, Math.min(n - len, dragView.s - bars));
+    renderState.view = { s, e: s + len };
+    requestDraw();
+  }
+
+  function setupInteractions() {
+    // Wheel Zoom
+    chartCanvas.addEventListener(
+      "wheel",
+      (e) => {
+        e.preventDefault();
+        const { data, view } = renderState;
+        if (!data.length || !view.e) return;
+        const r = chartCanvas.getBoundingClientRect();
+        const fx = Math.max(0, Math.min(1, (e.clientX - r.left) / (r.width - 62)));
+        const N = data.length;
+        const len = view.e - view.s;
+        const nl = Math.max(25, Math.min(N, Math.round(len * (e.deltaY > 0 ? 1.2 : 0.85))));
+        const c = view.s + len * fx;
+        let s = Math.round(c - nl * fx);
+        s = Math.max(0, Math.min(N - nl, s));
+        renderState.view = { s, e: s + nl };
+        requestDraw();
+      },
+      { passive: false }
+    );
+
+    // Mouse Move (Crosshair & Pan)
+    chartCanvas.addEventListener("mousemove", (e) => {
+      const r = chartCanvas.getBoundingClientRect();
+      renderState.hover = { mx: e.clientX - r.left, my: e.clientY - r.top };
+      if (renderState.dragging) {
+        pan(e.clientX);
       } else {
-        // Live Yahoo Ticker
-        payload.data_source = "yahoo";
-        payload.ticker = tickerInput.value.trim() || "BTC-USD";
-        payload.period = periodSelect.value;
-        payload.interval = intervalSelect.value;
-        payload.use_synthetic = false;
+        requestDraw();
+      }
+    });
 
-        res = await fetch("/api/calculate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+    chartCanvas.addEventListener("mouseleave", () => {
+      renderState.hover = null;
+      requestDraw();
+    });
+
+    chartCanvas.addEventListener("mousedown", (e) => {
+      renderState.dragging = true;
+      renderState.dragX = e.clientX;
+      renderState.dragView = { ...renderState.view };
+      e.preventDefault();
+    });
+
+    window.addEventListener("mouseup", () => {
+      if (renderState.dragging) {
+        renderState.dragging = false;
+        requestDraw();
+      }
+    });
+
+    // Resize Observer
+    const ro = new ResizeObserver(() => requestDraw());
+    ro.observe(chartWrap);
+    ro.observe(equityWrap);
+  }
+
+  // --------------------------------------------------------------------------
+  // 8. Event Listeners & UI Binding
+  // --------------------------------------------------------------------------
+  function setupEventListeners() {
+    // Source & Symbol Change
+    sourceSelect.addEventListener("change", () => {
+      state.source = sourceSelect.value;
+      if (state.source === "nau") {
+        if (nauEquitiesGroup.firstChild) {
+          symbolSelect.value = nauEquitiesGroup.firstChild.value;
+        }
+      } else {
+        symbolSelect.value = "BTCUSDT";
+      }
+      state.symbol = symbolSelect.value;
+      loadDataAndCompute();
+    });
+
+    symbolSelect.addEventListener("change", () => {
+      state.symbol = symbolSelect.value;
+      loadDataAndCompute();
+    });
+
+    // Timeframe Segment Buttons
+    tfSegment.querySelectorAll(".seg-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        tfSegment.querySelectorAll(".seg-btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        state.tf = btn.dataset.tf;
+        loadDataAndCompute();
+      });
+    });
+
+    // Date Range
+    dateFromInput.addEventListener("change", () => {
+      state.dateFrom = dateFromInput.value;
+      loadDataAndCompute();
+    });
+    dateToInput.addEventListener("change", () => {
+      state.dateTo = dateToInput.value;
+      loadDataAndCompute();
+    });
+
+    // Run Button
+    btnRunBacktest.addEventListener("click", () => {
+      loadDataAndCompute();
+    });
+
+    // Strategy Tester Tabs
+    const tabs = [
+      { btn: tabBtnOverview, content: contentOverview, id: "overview" },
+      { btn: tabBtnPerf, content: contentPerf, id: "perf" },
+      { btn: tabBtnTrades, content: contentTrades, id: "trades" },
+    ];
+
+    tabs.forEach(({ btn, content, id }) => {
+      btn.addEventListener("click", () => {
+        tabs.forEach((t) => {
+          t.btn.classList.remove("active");
+          t.content.classList.remove("active");
         });
-      }
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Veri yüklenirken hata oluştu");
-      }
-
-      const data = await res.json();
-      currentData = data;
-      renderChartDashboard(data);
-
-    } catch (err) {
-      alert("Hata: " + err.message);
-      console.error(err);
-    } finally {
-      chartLoader.classList.remove("active");
-    }
-  }
-
-  async function runBacktest() {
-    if (btChartLoader) btChartLoader.classList.add("active");
-    if (btTradesChartLoader) btTradesChartLoader.classList.add("active");
-
-    const payload = {
-      data_source: "nau",
-      swing_period: parseInt(swingPeriodRange.value),
-      base_apt: parseFloat(baseAptRange.value),
-      use_adapt: useAdaptToggle.checked,
-      vol_bias: parseFloat(volBiasRange.value),
-      strategy_type: btStrategyType.value,
-      trade_mode: btTradeMode.value,
-      initial_capital: parseFloat(btInitialCapital.value) || 10000.0,
-      position_size_pct: 100.0,
-      stop_loss_pct: btStopLoss.value ? parseFloat(btStopLoss.value) : null,
-      take_profit_pct: btTakeProfit.value ? parseFloat(btTakeProfit.value) : null,
-      trailing_stop_pct: btTrailingStop.value ? parseFloat(btTrailingStop.value) : null,
-      commission_pct: parseFloat(btCommission.value) || 0.05,
-      pullback_threshold_pct: 1.0,
-    };
-
-    if (currentTab === "tab-nau") {
-      payload.data_source = "nau";
-      payload.nau_symbol = nauSymbolSelect.value || "NVDA";
-      payload.nau_timeframe = nauTimeframeSelect.value || "1d";
-      payload.nau_category = nauCategory;
-      payload.nau_source = nauCategory === "equity" ? "equity_catalog" : "bybit";
-      payload.nau_limit_bars = parseInt(nauLimitBarsSelect.value) || 2500;
-      payload.use_synthetic = false;
-    } else if (currentTab === "tab-synthetic") {
-      payload.data_source = "synthetic";
-      payload.use_synthetic = true;
-    } else {
-      payload.data_source = "yahoo";
-      payload.ticker = tickerInput.value.trim() || "BTC-USD";
-      payload.period = periodSelect.value;
-      payload.interval = intervalSelect.value;
-      payload.use_synthetic = false;
-    }
-
-    try {
-      const res = await fetch("/api/backtest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Backtest çalıştırılırken hata oluştu");
-      }
-
-      const data = await res.json();
-      currentBacktestData = data;
-      renderBacktestDashboard(data);
-
-    } catch (err) {
-      alert("Backtest Hatası: " + err.message);
-      console.error(err);
-    } finally {
-      if (btChartLoader) btChartLoader.classList.remove("active");
-      if (btTradesChartLoader) btTradesChartLoader.classList.remove("active");
-    }
-  }
-
-  // --------------------------------------------------------------------------
-  // 4. Render Functions
-  // --------------------------------------------------------------------------
-  function renderChartDashboard(data) {
-    if (!chart) initChart();
-
-    chartHeaderTitle.textContent = `${data.source} — Dynamic Swing Anchored VWAP`;
-    
-    if (currentTab === "tab-nau") {
-      currentTickerName.textContent = `NAU · ${nauSymbolSelect.value || 'NVDA'}`;
-      currentTickerResolution.textContent = `${nauTimeframeSelect.value} · ${data.total_bars} Bar`;
-    } else if (currentTab === "tab-ticker") {
-      currentTickerName.textContent = tickerInput.value.toUpperCase();
-      currentTickerResolution.textContent = `${periodSelect.value} · ${intervalSelect.value}`;
-    } else if (currentTab === "tab-csv") {
-      currentTickerName.textContent = "CSV Dosyası";
-      currentTickerResolution.textContent = `${data.total_bars} Bar`;
-    } else {
-      currentTickerName.textContent = "Simülasyon";
-      currentTickerResolution.textContent = "300 Bar";
-    }
-
-    candleSeries.setData(data.candles);
-    volumeSeries.setData(data.volumes);
-
-    for (const [, s] of vwapSeriesMap) {
-      chart.removeSeries(s);
-    }
-    vwapSeriesMap.clear();
-
-    const segmentMap = new Map();
-    for (const pt of data.vwap_points) {
-      if (!segmentMap.has(pt.segment_id)) {
-        segmentMap.set(pt.segment_id, { dir: pt.dir, points: [] });
-      }
-      segmentMap.get(pt.segment_id).points.push({ time: pt.time, value: pt.value });
-    }
-
-    for (const [segId, seg] of segmentMap) {
-      const color = seg.dir > 0 ? "#089981" : "#f23645";
-      const lineSeries = chart.addLineSeries({
-        color: color,
-        lineWidth: 2,
-        crosshairMarkerVisible: true,
-        priceLineVisible: false,
-        lastValueVisible: false,
-      });
-      lineSeries.setData(seg.points);
-      vwapSeriesMap.set(segId, lineSeries);
-    }
-
-    const markers = data.anchors.map((a) => ({
-      time: a.time,
-      position: a.position,
-      color: a.color,
-      shape: a.shape,
-      text: a.label,
-      size: 1.2,
-    }));
-    candleSeries.setMarkers(markers);
-
-    chart.timeScale().fitContent();
-
-    // Metrics
-    const m = data.metrics;
-    metricPrice.textContent = `$${m.latest_close.toLocaleString()}`;
-    metricPriceChange.textContent = `${m.price_change_pct >= 0 ? "+" : ""}${m.price_change_pct}%`;
-    metricPriceChange.className = `metric-sub ${m.price_change_pct >= 0 ? "bullish" : "bearish"}`;
-
-    metricVwap.textContent = `$${m.latest_vwap.toLocaleString()}`;
-    metricVwapDiff.textContent = `${m.vwap_diff_pct >= 0 ? "+" : ""}${m.vwap_diff_pct}% Fark`;
-    metricVwapDiff.className = `metric-sub ${m.vwap_diff_pct >= 0 ? "bullish" : "bearish"}`;
-
-    metricRegime.textContent = m.regime === "BULLISH" ? "BOĞA / YÜKSELİŞ" : "AYI / DÜŞÜŞ";
-    metricRegime.className = `metric-value ${m.current_dir > 0 ? "bullish" : "bearish"}`;
-    metricRegimeSub.textContent = m.current_dir > 0 ? "Re-Anchor: Dip Pivot" : "Re-Anchor: Tepe Pivot";
-
-    metricPivotBadge.textContent = m.last_anchor_label;
-    metricPivotBadge.className = `badge-pivot ${m.last_anchor_label.includes("H") ? "badge-high" : "badge-low"}`;
-    metricPivotPrice.textContent = `$${m.last_anchor_price.toLocaleString()}`;
-
-    metricTotalSegments.textContent = m.total_segments;
-    metricApt.textContent = `${m.current_apt} Bar`;
-
-    // Populate Inspector Tables
-    countAnchors.textContent = `${data.anchors.length} Adet`;
-    anchorsTableBody.innerHTML = "";
-    data.anchors.slice().reverse().forEach((a) => {
-      const row = document.createElement("tr");
-      const dtStr = new Date(a.time * 1000).toLocaleString();
-      const isHigh = a.label.includes("H");
-      row.innerHTML = `
-        <td><span class="badge-pivot ${isHigh ? "badge-high" : "badge-low"}">${a.label}</span></td>
-        <td><strong>$${a.price.toLocaleString()}</strong></td>
-        <td>${dtStr}</td>
-        <td>#${a.bar_index}</td>
-        <td>#${a.segment_id}</td>
-        <td><span class="regime-tag ${a.dir > 0 ? "bull" : "bear"}">${a.dir > 0 ? "BOĞA" : "AYI"}</span></td>
-      `;
-      anchorsTableBody.appendChild(row);
-    });
-
-    barsTableBody.innerHTML = "";
-    const nBars = data.candles.length;
-    const vwapLookup = new Map(data.vwap_points.map((v) => [v.time, v]));
-    for (let i = nBars - 1; i >= Math.max(0, nBars - 100); i--) {
-      const c = data.candles[i];
-      const dtStr = new Date(c.time * 1000).toLocaleString();
-      const v = vwapLookup.get(c.time);
-      const vwapVal = v ? `$${v.value.toFixed(2)}` : "—";
-      const dirTag = v ? (v.dir > 0 ? '<span class="regime-tag bull">BOĞA</span>' : '<span class="regime-tag bear">AYI</span>') : "—";
-      const aptVal = v ? v.apt : "—";
-
-      const row = document.createElement("tr");
-      row.innerHTML = `
-        <td>${dtStr}</td>
-        <td>$${c.open.toFixed(2)}</td>
-        <td>$${c.high.toFixed(2)}</td>
-        <td>$${c.low.toFixed(2)}</td>
-        <td><strong>$${c.close.toFixed(2)}</strong></td>
-        <td>${data.volumes[i].value.toLocaleString()}</td>
-        <td><strong style="color: ${v && v.dir > 0 ? '#089981' : '#f23645'}">${vwapVal}</strong></td>
-        <td>${dirTag}</td>
-        <td>${aptVal}</td>
-      `;
-      barsTableBody.appendChild(row);
-    }
-  }
-
-  function renderBacktestDashboard(data) {
-    if (!btTradesChart) initBtTradesChart();
-    if (!equityChart) initEquityChart();
-
-    const chartData = data.chart;
-    const bt = data.backtest;
-
-    btTradesChartTitle.textContent = `${data.source} — DSAVWAP İşlem Giriş & Çıkış Noktaları`;
-    btEquityChartTitle.textContent = `${data.source} — Portföy Getiri Eğrisi vs Al & Tut Benchmark`;
-
-    // Render Candlesticks and DSAVWAP on Trades Chart
-    btCandleSeries.setData(chartData.candles);
-    btVolumeSeries.setData(chartData.volumes);
-
-    for (const [, s] of btVwapSeriesMap) {
-      btTradesChart.removeSeries(s);
-    }
-    btVwapSeriesMap.clear();
-
-    const segmentMap = new Map();
-    for (const pt of chartData.vwap_points) {
-      if (!segmentMap.has(pt.segment_id)) {
-        segmentMap.set(pt.segment_id, { dir: pt.dir, points: [] });
-      }
-      segmentMap.get(pt.segment_id).points.push({ time: pt.time, value: pt.value });
-    }
-
-    for (const [segId, seg] of segmentMap) {
-      const color = seg.dir > 0 ? "#089981" : "#f23645";
-      const lineSeries = btTradesChart.addLineSeries({
-        color: color,
-        lineWidth: 2,
-        crosshairMarkerVisible: true,
-        priceLineVisible: false,
-        lastValueVisible: false,
-      });
-      lineSeries.setData(seg.points);
-      btVwapSeriesMap.set(segId, lineSeries);
-    }
-
-    // Safe formatting helpers
-    const n = (v, d = 2) => (v != null && !isNaN(Number(v)) ? Number(v).toFixed(d) : "0.00");
-    const loc = (v, d = 2) => (v != null && !isNaN(Number(v)) ? Number(v).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d }) : "0.00");
-
-    // Trade Entry & Exit Markers
-    const tradeMarkers = [];
-    (bt.trades || []).forEach((t) => {
-      const isLong = t.direction === "LONG";
-      const isWin = Number(t.pnl || 0) >= 0;
-      const pnlPct = Number(t.pnl_pct || 0);
-
-      tradeMarkers.push({
-        time: t.entry_time,
-        position: isLong ? "belowBar" : "aboveBar",
-        color: isLong ? "#089981" : "#f23645",
-        shape: isLong ? "arrowUp" : "arrowDown",
-        text: `GİRİŞ: ${t.direction}`,
-        size: 1.3,
-      });
-
-      tradeMarkers.push({
-        time: t.exit_time,
-        position: isLong ? "aboveBar" : "belowBar",
-        color: isWin ? "#089981" : "#f23645",
-        shape: "circle",
-        text: `ÇIKIŞ: ${isWin ? '+' : ''}${n(pnlPct, 1)}% (${t.exit_reason || ''})`,
-        size: 1.1,
+        btn.classList.add("active");
+        content.classList.add("active");
+        state.tab = id;
+        requestDraw();
       });
     });
 
-    tradeMarkers.sort((a, b) => a.time - b.time);
-    btCandleSeries.setMarkers(tradeMarkers);
-    btTradesChart.timeScale().fitContent();
-
-    // Render Equity Curves
-    if (bt.equity_curve && bt.equity_curve.length > 0) {
-      equitySeries.setData(
-        bt.equity_curve.map((e) => ({ time: e.time, value: e.equity }))
-      );
-      benchmarkSeries.setData(
-        bt.equity_curve.map((e) => ({ time: e.time, value: e.benchmark }))
-      );
-      equityChart.timeScale().fitContent();
-    }
-
-    // Backtest KPI Cards
-    const netProfit = Number(bt.net_profit || 0);
-    const netProfitPct = Number(bt.net_profit_pct || 0);
-    const isProfit = netProfit >= 0;
-    btNetProfit.textContent = `${isProfit ? "+" : ""}$${loc(netProfit, 2)} (${isProfit ? "+" : ""}${n(netProfitPct, 2)}%)`;
-    btNetProfit.className = `metric-value ${isProfit ? "bullish" : "bearish"}`;
-
-    const bchReturn = Number(bt.benchmark_return_pct || 0);
-    const isBchProfit = bchReturn >= 0;
-    btBenchmarkReturn.textContent = `${isBchProfit ? "+" : ""}${n(bchReturn, 2)}% Al & Tut`;
-    btBenchmarkReturn.className = `metric-sub ${isBchProfit ? "bullish" : "bearish"}`;
-
-    btWinRate.textContent = `${n(bt.win_rate_pct, 1)}%`;
-    btTradesCount.textContent = `${bt.total_trades || 0} İşlem (${bt.winning_trades || 0} Kazanç / ${bt.losing_trades || 0} Kayıp)`;
-
-    const pf = Number(bt.profit_factor || 0);
-    btProfitFactor.textContent = pf > 0 ? (pf >= 999 ? "∞ (Kayıpsız)" : n(pf, 2)) : "0.00";
-    btWinLossRatio.textContent = `Kazanç/Kayıp: ${n(bt.win_loss_ratio, 2)}`;
-
-    btMaxDrawdown.textContent = `-${n(bt.max_drawdown_pct, 2)}%`;
-    btMaxDrawdownUsd.textContent = `-$${loc(bt.max_drawdown_usd, 2)}`;
-
-    btSharpeSortino.textContent = `${n(bt.sharpe_ratio, 2)} / ${n(bt.sortino_ratio, 2)}`;
-    const avgTradePct = Number(bt.avg_trade_pnl_pct || 0);
-    btAvgTrade.textContent = `${avgTradePct >= 0 ? "+" : ""}${n(avgTradePct, 2)}% Ort. İşlem`;
-
-    // Populate Backtest Trades Table
-    countTrades.textContent = `${bt.total_trades || 0} İşlem`;
-    tradesTableBody.innerHTML = "";
-    (bt.trades || []).slice().reverse().forEach((t) => {
-      const row = document.createElement("tr");
-      const isWin = Number(t.pnl || 0) >= 0;
-      const isLong = t.direction === "LONG";
-      const entryDt = t.entry_time ? new Date(t.entry_time * 1000).toLocaleString() : "—";
-      const exitDt = t.exit_time ? new Date(t.exit_time * 1000).toLocaleString() : "—";
-
-      row.innerHTML = `
-        <td>#${t.trade_id || ''}</td>
-        <td><span class="regime-tag ${isLong ? "bull" : "bear"}">${t.direction || ''}</span></td>
-        <td>${entryDt}</td>
-        <td><strong>$${loc(t.entry_price, 2)}</strong></td>
-        <td>${exitDt}</td>
-        <td><strong>$${loc(t.exit_price, 2)}</strong></td>
-        <td class="${isWin ? "bullish" : "bearish"}"><strong>${isWin ? "+" : ""}$${loc(t.pnl, 2)}</strong></td>
-        <td class="${isWin ? "bullish" : "bearish"}"><strong>${isWin ? "+" : ""}${n(t.pnl_pct, 2)}%</strong></td>
-        <td><span class="badge-tag">${t.exit_reason || ''}</span></td>
-        <td>${t.bars_held || 0} bar</td>
-      `;
-      tradesTableBody.appendChild(row);
+    // Parameter Controls
+    btnApplyParams.addEventListener("click", () => {
+      state.params = {
+        len: Math.max(2, Math.round(parseFloat(paramLen.value) || DEF_PARAMS.len)),
+        m1: parseFloat(paramM1.value) || DEF_PARAMS.m1,
+        m2: parseFloat(paramM2.value) || DEF_PARAMS.m2,
+        dir: paramDir.value || DEF_PARAMS.dir,
+        capital: Math.max(100, parseFloat(paramCapital.value) || DEF_PARAMS.capital),
+        sizePct: Math.min(100, Math.max(1, parseFloat(paramSizePct.value) || DEF_PARAMS.sizePct)),
+        commPct: Math.max(0, parseFloat(paramCommPct.value) || DEF_PARAMS.commPct),
+      };
+      loadDataAndCompute();
     });
-  }
 
-  // --------------------------------------------------------------------------
-  // 5. UI Event Handlers
-  // --------------------------------------------------------------------------
-
-  // Mode Switcher (Chart vs Backtest)
-  btnModeChart.addEventListener("click", () => {
-    currentMode = "chart";
-    btnModeChart.classList.add("active");
-    btnModeBacktest.classList.remove("active");
-    viewChart.classList.add("active");
-    viewBacktest.classList.remove("active");
-    backtestSettingsGroup.style.display = "none";
-    btnRecalculateText.textContent = "Hesapla ve Grafiği Güncelle";
-
-    setTimeout(() => {
-      if (chart && container) {
-        chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
-        chart.timeScale().fitContent();
-      }
-    }, 50);
-  });
-
-  btnModeBacktest.addEventListener("click", () => {
-    currentMode = "backtest";
-    btnModeBacktest.classList.add("active");
-    btnModeChart.classList.remove("active");
-    viewBacktest.classList.add("active");
-    viewChart.classList.remove("active");
-    backtestSettingsGroup.style.display = "block";
-    btnRecalculateText.textContent = "Strateji Backtestini Çalıştır";
-
-    setTimeout(() => {
-      if (currentBtChartTab === "paneBtTrades" && btTradesChart && btTradesContainer) {
-        btTradesChart.applyOptions({ width: btTradesContainer.clientWidth, height: btTradesContainer.clientHeight });
-        btTradesChart.timeScale().fitContent();
-      } else if (currentBtChartTab === "paneBtEquity" && equityChart && equityContainer) {
-        equityChart.applyOptions({ width: equityContainer.clientWidth, height: equityContainer.clientHeight });
-        equityChart.timeScale().fitContent();
-      }
-    }, 50);
-
-    if (!currentBacktestData) {
-      runBacktest();
-    }
-  });
-
-  // Backtest Chart Tabs (Trades Chart vs Equity Curve)
-  btnBtTabTrades.addEventListener("click", () => {
-    currentBtChartTab = "paneBtTrades";
-    btnBtTabTrades.classList.add("active");
-    btnBtTabEquity.classList.remove("active");
-    paneBtTrades.classList.add("active");
-    paneBtEquity.classList.remove("active");
-
-    setTimeout(() => {
-      if (btTradesChart && btTradesContainer) {
-        btTradesChart.applyOptions({ width: btTradesContainer.clientWidth, height: btTradesContainer.clientHeight });
-        btTradesChart.timeScale().fitContent();
-      }
-    }, 50);
-  });
-
-  btnBtTabEquity.addEventListener("click", () => {
-    currentBtChartTab = "paneBtEquity";
-    btnBtTabEquity.classList.add("active");
-    btnBtTabTrades.classList.remove("active");
-    paneBtEquity.classList.add("active");
-    paneBtTrades.classList.remove("active");
-
-    setTimeout(() => {
-      if (equityChart && equityContainer) {
-        equityChart.applyOptions({ width: equityContainer.clientWidth, height: equityContainer.clientHeight });
-        equityChart.timeScale().fitContent();
-      }
-    }, 50);
-  });
-
-  // Sliders binding
-  swingPeriodRange.addEventListener("input", () => {
-    valSwingPeriod.textContent = swingPeriodRange.value;
-  });
-
-  baseAptRange.addEventListener("input", () => {
-    valBaseApt.textContent = baseAptRange.value;
-  });
-
-  volBiasRange.addEventListener("input", () => {
-    valVolBias.textContent = parseFloat(volBiasRange.value).toFixed(1);
-  });
-
-  useAdaptToggle.addEventListener("change", () => {
-    if (useAdaptToggle.checked) {
-      volBiasRange.removeAttribute("disabled");
-      volBiasGroup.style.opacity = "1";
-    } else {
-      volBiasRange.setAttribute("disabled", "true");
-      volBiasGroup.style.opacity = "0.5";
-    }
-  });
-
-  // Source Tabs
-  document.querySelectorAll(".source-tabs .tab-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".source-tabs .tab-btn").forEach((b) => b.classList.remove("active"));
-      document.querySelectorAll(".tab-pane").forEach((p) => p.classList.remove("active"));
-
-      btn.classList.add("active");
-      currentTab = btn.dataset.tab;
-      document.getElementById(currentTab).classList.add("active");
-      executeAction();
+    btnResetParams.addEventListener("click", () => {
+      state.params = { ...DEF_PARAMS };
+      paramLen.value = DEF_PARAMS.len;
+      paramM1.value = DEF_PARAMS.m1;
+      paramM2.value = DEF_PARAMS.m2;
+      paramDir.value = DEF_PARAMS.dir;
+      paramCapital.value = DEF_PARAMS.capital;
+      paramSizePct.value = DEF_PARAMS.sizePct;
+      paramCommPct.value = DEF_PARAMS.commPct;
+      loadDataAndCompute();
     });
-  });
 
-  // Quick Chips in Live Ticker tab
-  document.querySelectorAll("#tab-ticker .quick-chips .chip").forEach((chip) => {
-    chip.addEventListener("click", () => {
-      document.querySelectorAll("#tab-ticker .quick-chips .chip").forEach((c) => c.classList.remove("active"));
-      chip.classList.add("active");
-      tickerInput.value = chip.dataset.symbol;
-      executeAction();
+    // Theme Switcher
+    themeSelect.value = state.theme;
+    htmlEl.setAttribute("data-theme", state.theme);
+    themeSelect.addEventListener("change", () => {
+      state.theme = themeSelect.value;
+      htmlEl.setAttribute("data-theme", state.theme);
+      localStorage.setItem("zvwap_theme", state.theme);
+      requestDraw();
     });
-  });
 
-  // Search & Recalculate
-  btnSearchTicker.addEventListener("click", executeAction);
-  btnRecalculate.addEventListener("click", executeAction);
-  tickerInput.addEventListener("keypress", (e) => {
-    if (e.key === "Enter") executeAction();
-  });
-
-  periodSelect.addEventListener("change", executeAction);
-  intervalSelect.addEventListener("change", executeAction);
-
-  btnGenerateSynthetic.addEventListener("click", () => {
-    currentTab = "tab-synthetic";
-    executeAction();
-  });
-
-  // CSV Drag and Drop
-  csvDropzone.addEventListener("click", () => csvFileInput.click());
-  btnSelectFile.addEventListener("click", (e) => {
-    e.stopPropagation();
-    csvFileInput.click();
-  });
-
-  csvFileInput.addEventListener("change", (e) => {
-    if (e.target.files.length > 0) {
-      uploadedFile = e.target.files[0];
-      selectedFileName.textContent = `Seçilen: ${uploadedFile.name}`;
-      executeAction();
-    }
-  });
-
-  csvDropzone.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    csvDropzone.classList.add("dragover");
-  });
-
-  csvDropzone.addEventListener("dragleave", () => {
-    csvDropzone.classList.remove("dragover");
-  });
-
-  csvDropzone.addEventListener("drop", (e) => {
-    e.preventDefault();
-    csvDropzone.classList.remove("dragover");
-    if (e.dataTransfer.files.length > 0) {
-      uploadedFile = e.dataTransfer.files[0];
-      selectedFileName.textContent = `Seçilen: ${uploadedFile.name}`;
-      executeAction();
-    }
-  });
-
-  // Inspector Tabs (Bottom)
-  document.querySelectorAll(".inspector-tabs .insp-tab").forEach((tab) => {
-    tab.addEventListener("click", () => {
-      if (!tab.dataset.target) return;
-      document.querySelectorAll(".inspector-tabs .insp-tab").forEach((t) => t.classList.remove("active"));
-      document.querySelectorAll(".insp-pane").forEach((p) => p.classList.remove("active"));
-
-      tab.classList.add("active");
-      document.getElementById(tab.dataset.target).classList.add("active");
-    });
-  });
-
-  // Reset Zoom Buttons
-  btnResetZoom.addEventListener("click", () => {
-    if (chart) chart.timeScale().fitContent();
-  });
-
-  if (btnResetBtTradesZoom) {
-    btnResetBtTradesZoom.addEventListener("click", () => {
-      if (btTradesChart) btTradesChart.timeScale().fitContent();
-    });
-  }
-
-  if (btnResetEquityZoom) {
-    btnResetEquityZoom.addEventListener("click", () => {
-      if (equityChart) equityChart.timeScale().fitContent();
-    });
-  }
-
-  // Theme Toggle
-  btnThemeToggle.addEventListener("click", () => {
-    const currentTheme = document.documentElement.getAttribute("data-theme");
-    const nextTheme = currentTheme === "light" ? "dark" : "light";
-    document.documentElement.setAttribute("data-theme", nextTheme);
-
-    if (themeIcon) {
-      themeIcon.setAttribute("data-lucide", nextTheme === "light" ? "moon" : "sun");
-      if (window.lucide) window.lucide.createIcons();
-    }
-
-    const isDark = nextTheme !== "light";
-    const colors = {
-      layout: {
-        background: { color: isDark ? "#161b22" : "#ffffff" },
-        textColor: isDark ? "#8b949e" : "#57606a",
-      },
-      grid: {
-        vertLines: { color: isDark ? "#21262d" : "#edf0f2" },
-        horzLines: { color: isDark ? "#21262d" : "#edf0f2" },
-      },
-    };
-
-    if (chart) chart.applyOptions(colors);
-    if (btTradesChart) btTradesChart.applyOptions(colors);
-    if (equityChart) equityChart.applyOptions(colors);
-  });
-
-  // Export CSV
-  btnExportCsv.addEventListener("click", () => {
-    if (!currentData || !currentData.candles) {
-      alert("Henüz dışa aktarılacak veri yok");
-      return;
-    }
-
-    const candles = currentData.candles;
-    const vwaps = currentData.vwap_points || [];
-    const vwapLookup = new Map(vwaps.map((v) => [v.time, v]));
-
-    let csvContent = "datetime,open,high,low,close,volume,dsavwap,dir,segment_id,apt\n";
-
-    for (let i = 0; i < candles.length; i++) {
-      const c = candles[i];
-      const dt = new Date(c.time * 1000).toISOString();
-      const v = vwapLookup.get(c.time);
-      const vwapVal = v ? v.value : "";
-      const dirVal = v ? v.dir : "";
-      const segVal = v ? v.segment_id : "";
-      const aptVal = v ? v.apt : "";
-      const volVal = currentData.volumes[i] ? currentData.volumes[i].value : 0;
-
-      csvContent += `${dt},${c.open},${c.high},${c.low},${c.close},${volVal},${vwapVal},${dirVal},${segVal},${aptVal}\n`;
-    }
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `dsavwap_${currentTickerName.textContent.toLowerCase().replace(/\s+/g, '_')}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  });
-
-  // Export Trades CSV
-  if (btnExportTradesCsv) {
-    btnExportTradesCsv.addEventListener("click", () => {
-      if (!currentBacktestData || !currentBacktestData.backtest || !currentBacktestData.backtest.trades) {
-        alert("Henüz dışa aktarılacak backtest işlemi yok");
+    // Export CSV
+    btnExportCsv.addEventListener("click", () => {
+      const { trades, data } = renderState;
+      if (!trades || !trades.length) {
+        alert("Dışa aktarılacak işlem bulunamadı.");
         return;
       }
+      let csv = "#,Yön,Giriş Zamanı,Giriş Fiyatı,Çıkış Zamanı,Çıkış Fiyatı,Neden,Net PnL ($),Getiri (%),Kümülatif PnL ($)\n";
+      let cum = 0;
+      trades.forEach((t, i) => {
+        cum += t.pnl;
+        const eTime = data[t.ei] ? new Date(data[t.ei].t).toISOString() : "";
+        const xTime = t.xi != null && data[t.xi] ? new Date(data[t.xi].t).toISOString() : "";
+        csv += `${i + 1},${t.side},${eTime},${t.entry},${xTime},${t.exit || ""},"${t.reason}",${t.pnl.toFixed(2)},${t.pnlPct != null ? t.pnlPct.toFixed(2) : ""},${cum.toFixed(2)}\n`;
+      });
 
-      const trades = currentBacktestData.backtest.trades;
-      let csvContent = "trade_id,entry_time,exit_time,direction,entry_price,exit_price,size,pnl_usd,pnl_pct,commission,exit_reason,bars_held\n";
-
-      for (const t of trades) {
-        const entryStr = new Date(t.entry_time * 1000).toISOString();
-        const exitStr = new Date(t.exit_time * 1000).toISOString();
-        csvContent += `${t.trade_id},${entryStr},${exitStr},${t.direction},${t.entry_price},${t.exit_price},${t.size},${t.pnl},${t.pnl_pct},${t.commission},${t.exit_reason},${t.bars_held}\n`;
-      }
-
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.setAttribute("href", url);
-      link.setAttribute("download", `dsavwap_backtest_trades_${currentTickerName.textContent.toLowerCase().replace(/\s+/g, '_')}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `zvwap_trades_${state.symbol}_${state.tf}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     });
   }
 
-  // Initial Load: Discover NAU Catalog and Render First Chart
-  initChart();
-  fetchNauCatalog().then(() => {
-    loadChartData();
-  });
-});
+  // --------------------------------------------------------------------------
+  // 9. Initialization
+  // --------------------------------------------------------------------------
+  async function init() {
+    setupInteractions();
+    setupEventListeners();
+    await fetchNauCatalog();
+    await loadDataAndCompute();
+  }
+
+  // Bootstrap
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();
