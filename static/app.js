@@ -424,81 +424,86 @@ import * as Engine from "./engine.js";
 
   async function loadHandoffData() {
     if (ranLabel) ranLabel.textContent = "Hesaplanıyor…";
-    let rawBars = [];
+    let apiData = null;
 
-    // NAU Symbol check
+    let payload = {
+      swing_period: state.params.len * 5 || 50,
+      base_apt: 20.0,
+      use_adapt: true,
+      vol_bias: 10.0,
+    };
+
     if (state.symbol.startsWith("nau:")) {
       const parts = state.symbol.split(":");
       const type = parts[1];
       const sym = parts[2];
       const category = parts[3] || "linear";
 
-      try {
-        const payload = {
-          data_source: "nau",
-          nau_symbol: sym,
-          nau_category: category,
-          nau_source: type === "equity" ? "equity_catalog" : "bybit",
-          nau_timeframe: state.tf,
-          nau_limit_bars: 1500,
-          swing_period: state.params.len * 5,
-        };
-
-        const res = await fetch("/api/calculate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-
-        if (res.ok) {
-          const resData = await res.json();
-          rawBars = (resData.candles || []).map((c, i) => ({
-            t: c.time * 1000,
-            o: c.open,
-            h: c.high,
-            l: c.low,
-            c: c.close,
-            v: resData.volumes && resData.volumes[i] ? resData.volumes[i].value : 1000,
-          }));
-          if (statusBadge) {
-            statusBadge.textContent = `${resData.source} — Canlı Veri`;
-            statusBadge.className = "status-badge-demo bull-text";
-          }
-        }
-      } catch (err) {
-        console.error("NAU API Hatası:", err);
-      }
+      payload.data_source = "nau";
+      payload.nau_symbol = sym;
+      payload.nau_category = category;
+      payload.nau_source = type === "equity" ? "equity_catalog" : "bybit";
+      payload.nau_timeframe = state.tf;
+      payload.nau_limit_bars = 1000;
+    } else if (state.symbol.includes("USD") || state.symbol.includes("EUR")) {
+      payload.data_source = "synthetic";
+      payload.use_synthetic = true;
+    } else {
+      payload.data_source = "yahoo";
+      payload.ticker = state.symbol;
+      payload.period = "6mo";
+      payload.interval = state.tf === "1D" ? "1d" : "1h";
     }
 
-    if (!rawBars || rawBars.length === 0) {
+    try {
+      const res = await fetch("/api/calculate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        apiData = await res.json();
+      }
+    } catch (err) {
+      console.warn("API calculate error:", err);
+    }
+
+    if (!apiData || !apiData.candles || apiData.candles.length === 0) {
       const cleanSym = state.symbol.replace(/^nau:[^:]+:/, "").split(":")[0] || "BTCUSDT";
-      rawBars = Engine.genData(cleanSym, state.tf, 420);
-      if (statusBadge) {
-        statusBadge.textContent = "Sentetik örnek veri — demo";
-        statusBadge.className = "status-badge-demo";
-      }
+      const rawBars = Engine.genData(cleanSym, state.tf, 420);
+      const swings = Engine.computeSwings(rawBars, state.params.len);
+      const vw = Engine.computeVWAP(rawBars, swings, state.params.m1, state.params.m2);
+      apiData = {
+        source: `Demo: ${cleanSym} (${state.tf})`,
+        candles: rawBars.map((b) => ({ time: Math.floor(b.t / 1000), open: b.o, high: b.h, low: b.l, close: b.c })),
+        volumes: rawBars.map((b) => ({ time: Math.floor(b.t / 1000), value: b.v, color: b.c >= b.o ? "rgba(8,153,129,0.35)" : "rgba(242,54,69,0.35)" })),
+        vwap_points: vw.filter(Boolean).map((w, i) => ({ time: Math.floor(rawBars[i].t / 1000), value: w.v, dir: w.aType === "L" ? 1 : -1, segment_id: w.aI })),
+        anchors: swings.map((sw) => ({ time: Math.floor(rawBars[sw.index].t / 1000), position: sw.type === "H" ? "aboveBar" : "belowBar", color: sw.type === "H" ? "#f23645" : "#089981", shape: sw.type === "H" ? "arrowDown" : "arrowUp", label: sw.label })),
+      };
     }
 
-    // Date Filters
-    let data = rawBars;
-    if (state.dateFrom) {
-      const tFrom = Date.parse(state.dateFrom);
-      if (!isNaN(tFrom)) data = data.filter((b) => b.t >= tFrom);
+    const handoffChartTitle = document.getElementById("handoffChartTitle");
+    if (handoffChartTitle) {
+      handoffChartTitle.textContent = `${apiData.source} — Dynamic Swing Anchored VWAP`;
     }
-    if (state.dateTo) {
-      const tTo = Date.parse(state.dateTo);
-      if (!isNaN(tTo)) data = data.filter((b) => b.t <= tTo + 86400000);
-    }
-    if (data.length < 40) data = rawBars;
 
-    // Run Engine Calculations
-    const swings = Engine.computeSwings(data, state.params.len);
-    const vw = Engine.computeVWAP(data, swings, state.params.m1, state.params.m2);
-    const bt = Engine.backtest(data, vw, state.params);
+    const rawBars = (apiData.candles || []).map((c, i) => ({
+      t: c.time * 1000,
+      o: c.open,
+      h: c.high,
+      l: c.low,
+      c: c.close,
+      v: apiData.volumes && apiData.volumes[i] ? apiData.volumes[i].value : 1000,
+    }));
+
+    const swings = Engine.computeSwings(rawBars, state.params.len);
+    const vw = Engine.computeVWAP(rawBars, swings, state.params.m1, state.params.m2);
+    const bt = Engine.backtest(rawBars, vw, state.params);
     const met = Engine.metrics(bt.trades, bt.equity, state.params.capital, state.tf);
     met.comm = bt.commTotal;
 
-    renderState.data = data;
+    renderState.data = rawBars;
     renderState.vw = vw;
     renderState.swings = swings;
     renderState.trades = bt.trades;
@@ -510,144 +515,94 @@ import * as Engine from "./engine.js";
     }
 
     if (statusLeft) {
-      const cleanName = state.symbol.replace(/^nau:[^:]+:/, "");
-      statusLeft.textContent = `${cleanName} · ${state.tf} · ${data.length} bar · ${ft2(data[0].t)} → ${ft2(data[data.length - 1].t)}`;
+      statusLeft.textContent = `${apiData.source} · ${rawBars.length} bar`;
     }
 
-    renderHandoffLightweightChart(data, vw, swings, bt.trades);
+    renderHandoffLightweightChart(apiData, rawBars, bt.trades);
     renderKpiTiles(met);
     renderPerformanceSummary(met);
-    renderTradesTable(bt.trades, data);
+    renderTradesTable(bt.trades, rawBars);
     drawEquity();
   }
 
-  function renderHandoffLightweightChart(data, vw, swings, trades) {
+  function renderHandoffLightweightChart(apiData, data, trades) {
     if (!handoffLwChart) initHandoffLightweightChart();
     if (!handoffLwChart) return;
 
-    const colors = getThemeColors();
-
     // 1. Candles & Volume
-    const candleData = data.map((b) => ({
-      time: Math.floor(b.t / 1000),
-      open: b.o,
-      high: b.h,
-      low: b.l,
-      close: b.c,
-    }));
-
-    const volumeData = data.map((b) => ({
-      time: Math.floor(b.t / 1000),
-      value: b.v,
-      color: b.c >= b.o ? "rgba(8,153,129,0.35)" : "rgba(242,54,69,0.35)",
-    }));
-
-    handoffCandleSeries.setData(candleData);
-    handoffVolumeSeries.setData(volumeData);
+    handoffCandleSeries.setData(apiData.candles);
+    handoffVolumeSeries.setData(apiData.volumes);
 
     // 2. Clear old VWAP line series
     handoffVwapSeriesList.forEach((s) => handoffLwChart.removeSeries(s));
     handoffVwapSeriesList = [];
 
-    // 3. Segment VWAP Lines & Deviation Bands
-    const segs = [];
-    let seg = [];
-    let curAnchor = null;
-    for (let i = 0; i < data.length; i++) {
-      const w = vw[i];
-      if (!w) {
-        if (seg.length) { segs.push(seg); seg = []; }
-        curAnchor = null;
-        continue;
+    // 3. Segment VWAP Lines directly from backend algorithm
+    const segmentMap = new Map();
+    for (const pt of (apiData.vwap_points || [])) {
+      if (!segmentMap.has(pt.segment_id)) {
+        segmentMap.set(pt.segment_id, { dir: pt.dir, points: [] });
       }
-      if (curAnchor !== null && w.aI !== curAnchor && seg.length) {
-        segs.push(seg);
-        seg = [];
-      }
-      curAnchor = w.aI;
-      seg.push([i, w]);
+      segmentMap.get(pt.segment_id).points.push({ time: pt.time, value: pt.value });
     }
-    if (seg.length) segs.push(seg);
 
-    segs.forEach((s) => {
-      const isBull = s[0][1].aType === "L";
-      const vwapColor = isBull ? colors.bull : colors.bear;
-
-      // VWAP Main Line
-      const vwapLine = handoffLwChart.addLineSeries({
-        color: vwapColor,
+    for (const [, seg] of segmentMap) {
+      const color = seg.dir > 0 ? "#089981" : "#f23645";
+      const lineSeries = handoffLwChart.addLineSeries({
+        color: color,
         lineWidth: 2,
         crosshairMarkerVisible: true,
         priceLineVisible: false,
         lastValueVisible: false,
       });
-      vwapLine.setData(s.map(([i, w]) => ({ time: Math.floor(data[i].t / 1000), value: w.v })));
-      handoffVwapSeriesList.push(vwapLine);
-
-      // +1σ & -1σ Bands
-      const u1Line = handoffLwChart.addLineSeries({
-        color: colors.bandLine1,
-        lineWidth: 1,
-        crosshairMarkerVisible: false,
-        priceLineVisible: false,
-        lastValueVisible: false,
-      });
-      u1Line.setData(s.map(([i, w]) => ({ time: Math.floor(data[i].t / 1000), value: w.u1 })));
-      handoffVwapSeriesList.push(u1Line);
-
-      const l1Line = handoffLwChart.addLineSeries({
-        color: colors.bandLine1,
-        lineWidth: 1,
-        crosshairMarkerVisible: false,
-        priceLineVisible: false,
-        lastValueVisible: false,
-      });
-      l1Line.setData(s.map(([i, w]) => ({ time: Math.floor(data[i].t / 1000), value: w.l1 })));
-      handoffVwapSeriesList.push(l1Line);
-
-      // +2σ & -2σ Bands (Dashed)
-      const u2Line = handoffLwChart.addLineSeries({
-        color: colors.bandLine2,
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dashed,
-        crosshairMarkerVisible: false,
-        priceLineVisible: false,
-        lastValueVisible: false,
-      });
-      u2Line.setData(s.map(([i, w]) => ({ time: Math.floor(data[i].t / 1000), value: w.u2 })));
-      handoffVwapSeriesList.push(u2Line);
-
-      const l2Line = handoffLwChart.addLineSeries({
-        color: colors.bandLine2,
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dashed,
-        crosshairMarkerVisible: false,
-        priceLineVisible: false,
-        lastValueVisible: false,
-      });
-      l2Line.setData(s.map(([i, w]) => ({ time: Math.floor(data[i].t / 1000), value: w.l2 })));
-      handoffVwapSeriesList.push(l2Line);
-    });
+      lineSeries.setData(seg.points);
+      handoffVwapSeriesList.push(lineSeries);
+    }
 
     // 4. Markers for Swings & Trade Signals
     const markers = [];
 
-    // Swing Pivot Markers
-    (swings || []).forEach((sw) => {
-      const isHigh = sw.type === "H";
+    // Swing Pivot Markers from backend
+    (apiData.anchors || []).forEach((a) => {
       markers.push({
-        time: Math.floor(data[sw.index].t / 1000),
-        position: isHigh ? "aboveBar" : "belowBar",
-        color: isHigh ? colors.bear : colors.bull,
-        shape: isHigh ? "arrowDown" : "arrowUp",
-        text: sw.label || (isHigh ? "H" : "L"),
-        size: 1.0,
+        time: a.time,
+        position: a.position,
+        color: a.color,
+        shape: a.shape,
+        text: a.label,
+        size: 1.1,
       });
     });
 
     // Trade Markers
     (trades || []).forEach((t) => {
       if (data[t.ei]) {
+        const isLong = t.side === "L";
+        markers.push({
+          time: Math.floor(data[t.ei].t / 1000),
+          position: isLong ? "belowBar" : "aboveBar",
+          color: isLong ? "#089981" : "#f23645",
+          shape: isLong ? "arrowUp" : "arrowDown",
+          text: isLong ? "BUY" : "SELL",
+          size: 1.4,
+        });
+      }
+      if (t.xi != null && data[t.xi]) {
+        markers.push({
+          time: Math.floor(data[t.xi].t / 1000),
+          position: t.side === "L" ? "aboveBar" : "belowBar",
+          color: "#758696",
+          shape: "circle",
+          text: "EXIT",
+          size: 0.9,
+        });
+      }
+    });
+
+    markers.sort((a, b) => a.time - b.time);
+    handoffCandleSeries.setMarkers(markers);
+    handoffLwChart.timeScale().fitContent();
+  }
         const isLong = t.side === "L";
         markers.push({
           time: Math.floor(data[t.ei].t / 1000),
