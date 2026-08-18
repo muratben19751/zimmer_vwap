@@ -1,5 +1,6 @@
 /* ==========================================================================
    DSAVWAP (Zeiierman) — Interactive Frontend & Backtest Application Logic
+   With Full Support for NAU Project Local Data Provider (Catalog & Bybit)
    ========================================================================== */
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -27,10 +28,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let currentMode = "chart"; // "chart" or "backtest"
   let currentBtChartTab = "paneBtTrades"; // "paneBtTrades" or "paneBtEquity"
-  let currentTab = "tab-ticker"; // "tab-ticker", "tab-csv", "tab-synthetic"
+  let currentTab = "tab-nau"; // "tab-nau" (default), "tab-ticker", "tab-csv", "tab-synthetic"
   let currentData = null;
   let currentBacktestData = null;
   let uploadedFile = null;
+
+  // NAU Catalog State
+  let nauCatalog = null;
+  let nauCategory = "equity"; // "equity" or "bybit"
 
   // DOM Elements
   const container = document.getElementById("tvChartContainer");
@@ -61,10 +66,23 @@ document.addEventListener("DOMContentLoaded", () => {
   const paneBtTrades = document.getElementById("paneBtTrades");
   const paneBtEquity = document.getElementById("paneBtEquity");
 
-  // Inputs
+  // NAU Controls
+  const btnNauCatEquity = document.getElementById("btnNauCatEquity");
+  const btnNauCatBybit = document.getElementById("btnNauCatBybit");
+  const nauSymbolSelect = document.getElementById("nauSymbolSelect");
+  const nauQuickChips = document.getElementById("nauQuickChips");
+  const nauTimeframeSelect = document.getElementById("nauTimeframeSelect");
+  const nauLimitBarsSelect = document.getElementById("nauLimitBarsSelect");
+  const nauMetaTitle = document.getElementById("nauMetaTitle");
+  const nauMetaBadge = document.getElementById("nauMetaBadge");
+  const nauMetaDesc = document.getElementById("nauMetaDesc");
+
+  // Yahoo Inputs
   const tickerInput = document.getElementById("tickerInput");
   const periodSelect = document.getElementById("periodSelect");
   const intervalSelect = document.getElementById("intervalSelect");
+
+  // DSAVWAP Param Sliders
   const swingPeriodRange = document.getElementById("swingPeriodRange");
   const valSwingPeriod = document.getElementById("valSwingPeriod");
   const baseAptRange = document.getElementById("baseAptRange");
@@ -159,7 +177,8 @@ document.addEventListener("DOMContentLoaded", () => {
       layout: {
         background: { color: bg },
         textColor: textColor,
-        fontFamily: "'Inter', sans-serif",
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 11,
       },
       grid: {
         vertLines: { color: gridColor },
@@ -168,36 +187,50 @@ document.addEventListener("DOMContentLoaded", () => {
       crosshair: {
         mode: window.LightweightCharts.CrosshairMode.Normal,
       },
-      rightPriceScale: {
-        borderColor: gridColor,
-        scaleMargins: { top: 0.1, bottom: 0.25 },
-      },
       timeScale: {
         borderColor: gridColor,
         timeVisible: true,
         secondsVisible: false,
+      },
+      rightPriceScale: {
+        borderColor: gridColor,
+        autoScale: true,
+        scaleMargins: {
+          top: 0.1,
+          bottom: 0.2,
+        },
       },
     });
 
     candleSeries = chart.addCandlestickSeries({
       upColor: "#089981",
       downColor: "#f23645",
-      borderVisible: false,
+      borderUpColor: "#089981",
+      borderDownColor: "#f23645",
       wickUpColor: "#089981",
       wickDownColor: "#f23645",
     });
 
     volumeSeries = chart.addHistogramSeries({
-      color: "#26a69a",
       priceFormat: { type: "volume" },
-      priceScaleId: "volume",
+      priceScaleId: "",
+      scaleMargins: {
+        top: 0.8,
+        bottom: 0,
+      },
     });
 
-    chart.priceScale("volume").applyOptions({
-      scaleMargins: { top: 0.8, bottom: 0 },
+    window.addEventListener("resize", () => {
+      if (chart && container) {
+        chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
+      }
+      if (btTradesChart && btTradesContainer) {
+        btTradesChart.applyOptions({ width: btTradesContainer.clientWidth, height: btTradesContainer.clientHeight });
+      }
+      if (equityChart && equityContainer) {
+        equityChart.applyOptions({ width: equityContainer.clientWidth, height: equityContainer.clientHeight });
+      }
     });
-
-    vwapSeriesMap.clear();
   }
 
   function initBtTradesChart() {
@@ -210,12 +243,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const { bg, textColor, gridColor } = getThemeColors();
 
     btTradesChart = window.LightweightCharts.createChart(btTradesContainer, {
-      width: btTradesContainer.clientWidth,
-      height: btTradesContainer.clientHeight,
+      width: btTradesContainer.clientWidth || 800,
+      height: btTradesContainer.clientHeight || 450,
       layout: {
         background: { color: bg },
         textColor: textColor,
-        fontFamily: "'Inter', sans-serif",
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 11,
       },
       grid: {
         vertLines: { color: gridColor },
@@ -224,36 +258,38 @@ document.addEventListener("DOMContentLoaded", () => {
       crosshair: {
         mode: window.LightweightCharts.CrosshairMode.Normal,
       },
-      rightPriceScale: {
-        borderColor: gridColor,
-        scaleMargins: { top: 0.1, bottom: 0.25 },
-      },
       timeScale: {
         borderColor: gridColor,
         timeVisible: true,
         secondsVisible: false,
+      },
+      rightPriceScale: {
+        borderColor: gridColor,
+        autoScale: true,
+        scaleMargins: {
+          top: 0.1,
+          bottom: 0.2,
+        },
       },
     });
 
     btCandleSeries = btTradesChart.addCandlestickSeries({
       upColor: "#089981",
       downColor: "#f23645",
-      borderVisible: false,
+      borderUpColor: "#089981",
+      borderDownColor: "#f23645",
       wickUpColor: "#089981",
       wickDownColor: "#f23645",
     });
 
     btVolumeSeries = btTradesChart.addHistogramSeries({
-      color: "#26a69a",
       priceFormat: { type: "volume" },
-      priceScaleId: "volume",
+      priceScaleId: "",
+      scaleMargins: {
+        top: 0.8,
+        bottom: 0,
+      },
     });
-
-    btTradesChart.priceScale("volume").applyOptions({
-      scaleMargins: { top: 0.8, bottom: 0 },
-    });
-
-    btVwapSeriesMap.clear();
   }
 
   function initEquityChart() {
@@ -266,69 +302,205 @@ document.addEventListener("DOMContentLoaded", () => {
     const { bg, textColor, gridColor } = getThemeColors();
 
     equityChart = window.LightweightCharts.createChart(equityContainer, {
-      width: equityContainer.clientWidth,
-      height: equityContainer.clientHeight,
+      width: equityContainer.clientWidth || 800,
+      height: equityContainer.clientHeight || 450,
       layout: {
         background: { color: bg },
         textColor: textColor,
-        fontFamily: "'Inter', sans-serif",
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 11,
       },
       grid: {
         vertLines: { color: gridColor },
         horzLines: { color: gridColor },
-      },
-      crosshair: {
-        mode: window.LightweightCharts.CrosshairMode.Normal,
-      },
-      rightPriceScale: {
-        borderColor: gridColor,
-        scaleMargins: { top: 0.15, bottom: 0.15 },
       },
       timeScale: {
         borderColor: gridColor,
         timeVisible: true,
         secondsVisible: false,
       },
+      rightPriceScale: {
+        borderColor: gridColor,
+        autoScale: true,
+      },
     });
 
-    equitySeries = equityChart.addAreaSeries({
-      topColor: "rgba(8, 153, 129, 0.4)",
-      bottomColor: "rgba(8, 153, 129, 0.0)",
-      lineColor: "#089981",
-      lineWidth: 2.5,
-      priceLineVisible: true,
+    equitySeries = equityChart.addLineSeries({
+      color: "#2962ff",
+      lineWidth: 2,
+      title: "DSAVWAP Stratejisi ($)",
     });
 
     benchmarkSeries = equityChart.addLineSeries({
-      color: "#2962ff",
-      lineWidth: 2,
-      lineStyle: window.LightweightCharts.LineStyle.Dotted,
-      priceLineVisible: false,
+      color: "#8b949e",
+      lineWidth: 1,
+      lineStyle: 2,
+      title: "Al ve Tut ($)",
     });
   }
 
-  function handleResize() {
-    if (chart && container) {
-      chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
-    }
-    if (btTradesChart && btTradesContainer) {
-      btTradesChart.applyOptions({ width: btTradesContainer.clientWidth, height: btTradesContainer.clientHeight });
-    }
-    if (equityChart && equityContainer) {
-      equityChart.applyOptions({ width: equityContainer.clientWidth, height: equityContainer.clientHeight });
+  // --------------------------------------------------------------------------
+  // 2. NAU Catalog Discovery & UI Rendering
+  // --------------------------------------------------------------------------
+  async function fetchNauCatalog() {
+    try {
+      const res = await fetch("/api/nau/catalog");
+      if (!res.ok) throw new Error("NAU katalog bilgisi alınamadı");
+      nauCatalog = await res.json();
+      renderNauControls();
+    } catch (err) {
+      console.warn("NAU Catalog error:", err);
+      if (nauMetaDesc) {
+        nauMetaDesc.textContent = "NAU katalog verisi okunamadı: " + err.message;
+      }
     }
   }
 
-  window.addEventListener("resize", handleResize);
+  function renderNauControls() {
+    if (!nauCatalog) return;
+
+    const list = nauCategory === "equity" ? nauCatalog.equities : nauCatalog.bybit;
+    if (!list || list.length === 0) {
+      nauSymbolSelect.innerHTML = `<option value="">Veri bulunamadı</option>`;
+      return;
+    }
+
+    // Save previous selection if exists in new list
+    const prevSym = nauSymbolSelect.value;
+    let selectedItem = list[0];
+
+    // Populate Symbol Select Dropdown
+    nauSymbolSelect.innerHTML = "";
+    list.forEach((item) => {
+      const opt = document.createElement("option");
+      opt.value = item.symbol;
+      if (nauCategory === "equity") {
+        opt.textContent = `${item.symbol} — (${item.venue || 'NASDAQ'}, ${item.total_bars ? item.total_bars.toLocaleString() + ' Bar' : 'Arşiv'})`;
+      } else {
+        opt.textContent = `${item.name || item.symbol} — (${item.category.toUpperCase()})`;
+      }
+      if (item.symbol === prevSym || (nauCategory === "equity" && item.symbol === "NVDA") || (nauCategory === "bybit" && item.symbol === "BTCUSDT")) {
+        opt.selected = true;
+        selectedItem = item;
+      }
+      nauSymbolSelect.appendChild(opt);
+    });
+
+    // Populate Quick Chips
+    nauQuickChips.innerHTML = "";
+    const popularSymbols = nauCategory === "equity" 
+      ? ["NVDA", "AAPL", "QQQC", "SPY", "TSLA", "AMD", "MSFT", "AMZN"]
+      : ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"];
+
+    popularSymbols.forEach((sym) => {
+      const exists = list.some((it) => it.symbol === sym);
+      if (exists) {
+        const chip = document.createElement("span");
+        chip.className = `chip ${sym === selectedItem.symbol ? "active" : ""}`;
+        chip.textContent = sym.replace("USDT", "");
+        chip.dataset.symbol = sym;
+        chip.addEventListener("click", () => {
+          document.querySelectorAll("#nauQuickChips .chip").forEach((c) => c.classList.remove("active"));
+          chip.classList.add("active");
+          nauSymbolSelect.value = sym;
+          updateNauTimeframes();
+          executeAction();
+        });
+        nauQuickChips.appendChild(chip);
+      }
+    });
+
+    updateNauTimeframes();
+  }
+
+  function updateNauTimeframes() {
+    if (!nauCatalog) return;
+    const list = nauCategory === "equity" ? nauCatalog.equities : nauCatalog.bybit;
+    const sym = nauSymbolSelect.value;
+    const item = list.find((it) => it.symbol === sym) || list[0];
+
+    if (!item) return;
+
+    // Available Timeframes
+    const availableTfs = item.timeframes || ["1d", "1h", "15m", "5m", "1m"];
+    const currentTf = nauTimeframeSelect.value;
+
+    nauTimeframeSelect.innerHTML = "";
+    const tfLabels = {
+      "1m": "1 Dakika (1m)",
+      "5m": "5 Dakika (5m)",
+      "15m": "15 Dakika (15m)",
+      "30m": "30 Dakika (30m)",
+      "1h": "1 Saat (1h)",
+      "4h": "4 Saat (4h)",
+      "1d": "1 Gün (1d)",
+      "1wk": "1 Hafta (1wk)",
+    };
+
+    availableTfs.forEach((tf) => {
+      const opt = document.createElement("option");
+      opt.value = tf;
+      opt.textContent = tfLabels[tf] || tf;
+      if (tf === currentTf || (tf === "1h" && !availableTfs.includes(currentTf)) || (tf === "1d" && !availableTfs.includes(currentTf))) {
+        opt.selected = true;
+      }
+      nauTimeframeSelect.appendChild(opt);
+    });
+
+    // Update Metadata Card
+    if (nauCategory === "equity") {
+      nauMetaTitle.textContent = `${item.symbol} (${item.venue || 'NASDAQ'})`;
+      nauMetaBadge.textContent = item.adjusted ? "Split-Adjusted" : "Unadjusted";
+      nauMetaBadge.style.color = item.adjusted ? "#089981" : "#f23645";
+      nauMetaDesc.innerHTML = `<strong>Tarih:</strong> ${item.first_date || 'N/A'} → ${item.last_date || 'N/A'}<br>` +
+                              `<strong>Toplam Bar:</strong> ${item.total_bars ? item.total_bars.toLocaleString() : 'N/A'}<br>` +
+                              `<strong>Not:</strong> ${item.note || 'Massive / Polygon'}`;
+    } else {
+      nauMetaTitle.textContent = `${item.symbol} [${(item.category || 'LINEAR').toUpperCase()}]`;
+      nauMetaBadge.textContent = "Bybit Kline Cache";
+      nauMetaBadge.style.color = "#58a6ff";
+      nauMetaDesc.innerHTML = `<strong>Kaynak:</strong> Bybit v5 Kline Arşivi<br>` +
+                              `<strong>Kategori:</strong> ${item.category}<br>` +
+                              `<strong>Zaman Dilimleri:</strong> ${item.timeframes.join(', ')}`;
+    }
+  }
+
+  // NAU Category Toggle
+  btnNauCatEquity.addEventListener("click", () => {
+    nauCategory = "equity";
+    btnNauCatEquity.classList.add("active");
+    btnNauCatBybit.classList.remove("active");
+    renderNauControls();
+    executeAction();
+  });
+
+  btnNauCatBybit.addEventListener("click", () => {
+    nauCategory = "bybit";
+    btnNauCatBybit.classList.add("active");
+    btnNauCatEquity.classList.remove("active");
+    renderNauControls();
+    executeAction();
+  });
+
+  nauSymbolSelect.addEventListener("change", () => {
+    updateNauTimeframes();
+    document.querySelectorAll("#nauQuickChips .chip").forEach((c) => {
+      c.classList.toggle("active", c.dataset.symbol === nauSymbolSelect.value);
+    });
+    executeAction();
+  });
+
+  nauTimeframeSelect.addEventListener("change", executeAction);
+  nauLimitBarsSelect.addEventListener("change", executeAction);
 
   // --------------------------------------------------------------------------
-  // 2. Data Fetching & Execution
+  // 3. Calculation & Backtest Triggers
   // --------------------------------------------------------------------------
-  async function executeAction() {
-    if (currentMode === "backtest") {
-      await runBacktest();
+  function executeAction() {
+    if (currentMode === "chart") {
+      loadChartData();
     } else {
-      await loadChartData();
+      runBacktest();
     }
   }
 
@@ -336,6 +508,7 @@ document.addEventListener("DOMContentLoaded", () => {
     chartLoader.classList.add("active");
 
     const payload = {
+      data_source: "nau",
       swing_period: parseInt(swingPeriodRange.value),
       base_apt: parseFloat(baseAptRange.value),
       use_adapt: useAdaptToggle.checked,
@@ -344,7 +517,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       let res;
-      if (currentTab === "tab-csv" && uploadedFile) {
+      if (currentTab === "tab-nau") {
+        payload.data_source = "nau";
+        payload.nau_symbol = nauSymbolSelect.value || "NVDA";
+        payload.nau_timeframe = nauTimeframeSelect.value || "1d";
+        payload.nau_category = nauCategory;
+        payload.nau_source = nauCategory === "equity" ? "equity_catalog" : "bybit";
+        payload.nau_limit_bars = parseInt(nauLimitBarsSelect.value) || 1000;
+        payload.use_synthetic = false;
+
+        res = await fetch("/api/calculate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+      } else if (currentTab === "tab-csv" && uploadedFile) {
         const formData = new FormData();
         formData.append("file", uploadedFile);
         formData.append("swing_period", payload.swing_period);
@@ -353,14 +541,19 @@ document.addEventListener("DOMContentLoaded", () => {
         formData.append("vol_bias", payload.vol_bias);
 
         res = await fetch("/api/upload", { method: "POST", body: formData });
+
       } else if (currentTab === "tab-synthetic") {
+        payload.data_source = "synthetic";
         payload.use_synthetic = true;
         res = await fetch("/api/calculate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
+
       } else {
+        // Live Yahoo Ticker
+        payload.data_source = "yahoo";
         payload.ticker = tickerInput.value.trim() || "BTC-USD";
         payload.period = periodSelect.value;
         payload.interval = intervalSelect.value;
@@ -395,6 +588,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (btTradesChartLoader) btTradesChartLoader.classList.add("active");
 
     const payload = {
+      data_source: "nau",
       swing_period: parseInt(swingPeriodRange.value),
       base_apt: parseFloat(baseAptRange.value),
       use_adapt: useAdaptToggle.checked,
@@ -410,9 +604,19 @@ document.addEventListener("DOMContentLoaded", () => {
       pullback_threshold_pct: 1.0,
     };
 
-    if (currentTab === "tab-synthetic") {
+    if (currentTab === "tab-nau") {
+      payload.data_source = "nau";
+      payload.nau_symbol = nauSymbolSelect.value || "NVDA";
+      payload.nau_timeframe = nauTimeframeSelect.value || "1d";
+      payload.nau_category = nauCategory;
+      payload.nau_source = nauCategory === "equity" ? "equity_catalog" : "bybit";
+      payload.nau_limit_bars = parseInt(nauLimitBarsSelect.value) || 2500;
+      payload.use_synthetic = false;
+    } else if (currentTab === "tab-synthetic") {
+      payload.data_source = "synthetic";
       payload.use_synthetic = true;
     } else {
+      payload.data_source = "yahoo";
       payload.ticker = tickerInput.value.trim() || "BTC-USD";
       payload.period = periodSelect.value;
       payload.interval = intervalSelect.value;
@@ -445,14 +649,26 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // --------------------------------------------------------------------------
-  // 3. Render Functions
+  // 4. Render Functions
   // --------------------------------------------------------------------------
   function renderChartDashboard(data) {
     if (!chart) initChart();
 
     chartHeaderTitle.textContent = `${data.source} — Dynamic Swing Anchored VWAP`;
-    currentTickerName.textContent = (currentTab === "tab-ticker" ? tickerInput.value.toUpperCase() : (currentTab === "tab-csv" ? "CSV" : "Simülasyon"));
-    currentTickerResolution.textContent = `${periodSelect.value} · ${intervalSelect.value}`;
+    
+    if (currentTab === "tab-nau") {
+      currentTickerName.textContent = `NAU · ${nauSymbolSelect.value || 'NVDA'}`;
+      currentTickerResolution.textContent = `${nauTimeframeSelect.value} · ${data.total_bars} Bar`;
+    } else if (currentTab === "tab-ticker") {
+      currentTickerName.textContent = tickerInput.value.toUpperCase();
+      currentTickerResolution.textContent = `${periodSelect.value} · ${intervalSelect.value}`;
+    } else if (currentTab === "tab-csv") {
+      currentTickerName.textContent = "CSV Dosyası";
+      currentTickerResolution.textContent = `${data.total_bars} Bar`;
+    } else {
+      currentTickerName.textContent = "Simülasyon";
+      currentTickerResolution.textContent = "300 Bar";
+    }
 
     candleSeries.setData(data.candles);
     volumeSeries.setData(data.volumes);
@@ -499,40 +715,79 @@ document.addEventListener("DOMContentLoaded", () => {
     const m = data.metrics;
     metricPrice.textContent = `$${m.latest_close.toLocaleString()}`;
     metricPriceChange.textContent = `${m.price_change_pct >= 0 ? "+" : ""}${m.price_change_pct}%`;
-    metricPriceChange.className = `metric-sub ${m.price_change_pct >= 0 ? "text-bull" : "text-bear"}`;
+    metricPriceChange.className = `metric-sub ${m.price_change_pct >= 0 ? "bullish" : "bearish"}`;
 
     metricVwap.textContent = `$${m.latest_vwap.toLocaleString()}`;
     metricVwapDiff.textContent = `${m.vwap_diff_pct >= 0 ? "+" : ""}${m.vwap_diff_pct}% Fark`;
-    metricVwapDiff.className = `metric-sub ${m.vwap_diff_pct >= 0 ? "text-bull" : "text-bear"}`;
+    metricVwapDiff.className = `metric-sub ${m.vwap_diff_pct >= 0 ? "bullish" : "bearish"}`;
 
-    metricRegime.textContent = m.regime;
-    metricRegime.className = `metric-badge ${m.current_dir < 0 ? "bearish" : ""}`;
-    metricRegimeSub.textContent = `Trend Yönü: ${m.current_dir > 0 ? "+1 (Boğa)" : "-1 (Ayı)"}`;
+    metricRegime.textContent = m.regime === "BULLISH" ? "BOĞA / YÜKSELİŞ" : "AYI / DÜŞÜŞ";
+    metricRegime.className = `metric-value ${m.current_dir > 0 ? "bullish" : "bearish"}`;
+    metricRegimeSub.textContent = m.current_dir > 0 ? "Re-Anchor: Dip Pivot" : "Re-Anchor: Tepe Pivot";
 
     metricPivotBadge.textContent = m.last_anchor_label;
-    metricPivotBadge.className = `pivot-badge ${m.last_anchor_label.includes("H") ? "high" : ""}`;
+    metricPivotBadge.className = `badge-pivot ${m.last_anchor_label.includes("H") ? "badge-high" : "badge-low"}`;
     metricPivotPrice.textContent = `$${m.last_anchor_price.toLocaleString()}`;
-    metricTotalSegments.textContent = `Toplam Segment: ${m.total_segments}`;
-    metricApt.textContent = `${m.current_apt} bar`;
 
-    countAnchors.textContent = data.anchors.length;
-    renderAnchorsTable(data.anchors);
-    renderBarsTable(data);
+    metricTotalSegments.textContent = m.total_segments;
+    metricApt.textContent = `${m.current_apt} Bar`;
+
+    // Populate Inspector Tables
+    countAnchors.textContent = `${data.anchors.length} Adet`;
+    anchorsTableBody.innerHTML = "";
+    data.anchors.slice().reverse().forEach((a) => {
+      const row = document.createElement("tr");
+      const dtStr = new Date(a.time * 1000).toLocaleString();
+      const isHigh = a.label.includes("H");
+      row.innerHTML = `
+        <td><span class="badge-pivot ${isHigh ? "badge-high" : "badge-low"}">${a.label}</span></td>
+        <td><strong>$${a.price.toLocaleString()}</strong></td>
+        <td>${dtStr}</td>
+        <td>#${a.bar_index}</td>
+        <td>#${a.segment_id}</td>
+        <td><span class="regime-tag ${a.dir > 0 ? "bull" : "bear"}">${a.dir > 0 ? "BOĞA" : "AYI"}</span></td>
+      `;
+      anchorsTableBody.appendChild(row);
+    });
+
+    barsTableBody.innerHTML = "";
+    const nBars = data.candles.length;
+    const vwapLookup = new Map(data.vwap_points.map((v) => [v.time, v]));
+    for (let i = nBars - 1; i >= Math.max(0, nBars - 100); i--) {
+      const c = data.candles[i];
+      const dtStr = new Date(c.time * 1000).toLocaleString();
+      const v = vwapLookup.get(c.time);
+      const vwapVal = v ? `$${v.value.toFixed(2)}` : "—";
+      const dirTag = v ? (v.dir > 0 ? '<span class="regime-tag bull">BOĞA</span>' : '<span class="regime-tag bear">AYI</span>') : "—";
+      const aptVal = v ? v.apt : "—";
+
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td>${dtStr}</td>
+        <td>$${c.open.toFixed(2)}</td>
+        <td>$${c.high.toFixed(2)}</td>
+        <td>$${c.low.toFixed(2)}</td>
+        <td><strong>$${c.close.toFixed(2)}</strong></td>
+        <td>${data.volumes[i].value.toLocaleString()}</td>
+        <td><strong style="color: ${v && v.dir > 0 ? '#089981' : '#f23645'}">${vwapVal}</strong></td>
+        <td>${dirTag}</td>
+        <td>${aptVal}</td>
+      `;
+      barsTableBody.appendChild(row);
+    }
   }
 
   function renderBacktestDashboard(data) {
     if (!btTradesChart) initBtTradesChart();
     if (!equityChart) initEquityChart();
 
-    const bt = data.backtest;
     const chartData = data.chart;
+    const bt = data.backtest;
 
-    btTradesChartTitle.textContent = `${data.source} — DSAVWAP Giriş & Çıkış Noktaları (${bt.total_trades} İşlem)`;
-    btEquityChartTitle.textContent = `${data.source} — Equity Curve vs Buy & Hold Benchmark (${bt.total_trades} İşlem)`;
-    currentTickerName.textContent = (currentTab === "tab-ticker" ? tickerInput.value.toUpperCase() : (currentTab === "tab-csv" ? "CSV" : "Simülasyon"));
-    currentTickerResolution.textContent = `${periodSelect.value} · ${intervalSelect.value}`;
+    btTradesChartTitle.textContent = `${data.source} — DSAVWAP İşlem Giriş & Çıkış Noktaları`;
+    btEquityChartTitle.textContent = `${data.source} — Portföy Getiri Eğrisi vs Al & Tut Benchmark`;
 
-    // 1. Render Backtest Trades Chart (Candles + DSAVWAP + Trade Entry/Exit Markers)
+    // Render Candlesticks and DSAVWAP on Trades Chart
     btCandleSeries.setData(chartData.candles);
     btVolumeSeries.setData(chartData.volumes);
 
@@ -562,209 +817,108 @@ document.addEventListener("DOMContentLoaded", () => {
       btVwapSeriesMap.set(segId, lineSeries);
     }
 
-    // Build combined markers: Swing Anchors + Trade Entries + Trade Exits
-    const combinedMarkers = [];
+    // Safe formatting helpers
+    const n = (v, d = 2) => (v != null && !isNaN(Number(v)) ? Number(v).toFixed(d) : "0.00");
+    const loc = (v, d = 2) => (v != null && !isNaN(Number(v)) ? Number(v).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d }) : "0.00");
 
-    // Add Swing Labels
-    for (const a of chartData.anchors) {
-      combinedMarkers.push({
-        time: a.time,
-        position: a.position,
-        color: a.color,
-        shape: a.shape,
-        text: a.label,
-        size: 1.0,
-      });
-    }
-
-    // Add Trade Entry & Exit Markers
-    for (const t of bt.trades) {
+    // Trade Entry & Exit Markers
+    const tradeMarkers = [];
+    (bt.trades || []).forEach((t) => {
       const isLong = t.direction === "LONG";
-      const isWin = t.pnl >= 0;
+      const isWin = Number(t.pnl || 0) >= 0;
+      const pnlPct = Number(t.pnl_pct || 0);
 
-      // Entry Marker
-      combinedMarkers.push({
+      tradeMarkers.push({
         time: t.entry_time,
         position: isLong ? "belowBar" : "aboveBar",
         color: isLong ? "#089981" : "#f23645",
         shape: isLong ? "arrowUp" : "arrowDown",
-        text: isLong ? `BUY L (#${t.trade_id})` : `SELL S (#${t.trade_id})`,
-        size: 1.5,
+        text: `GİRİŞ: ${t.direction}`,
+        size: 1.3,
       });
 
-      // Exit Marker (if exit_time != entry_time)
-      const exitReasonShort = t.exit_reason === "TAKE_PROFIT" ? "TP" :
-                              t.exit_reason === "STOP_LOSS" ? "SL" :
-                              t.exit_reason === "TRAILING_STOP" ? "TR-SL" :
-                              t.exit_reason === "SIGNAL_REVERSAL" ? "REV" : "EXIT";
-
-      combinedMarkers.push({
+      tradeMarkers.push({
         time: t.exit_time,
         position: isLong ? "aboveBar" : "belowBar",
         color: isWin ? "#089981" : "#f23645",
         shape: "circle",
-        text: `${exitReasonShort} (${t.pnl_pct >= 0 ? "+" : ""}${t.pnl_pct}%)`,
-        size: 1.3,
+        text: `ÇIKIŞ: ${isWin ? '+' : ''}${n(pnlPct, 1)}% (${t.exit_reason || ''})`,
+        size: 1.1,
       });
-    }
+    });
 
-    // Sort markers by time
-    combinedMarkers.sort((a, b) => a.time - b.time);
-    btCandleSeries.setMarkers(combinedMarkers);
+    tradeMarkers.sort((a, b) => a.time - b.time);
+    btCandleSeries.setMarkers(tradeMarkers);
     btTradesChart.timeScale().fitContent();
 
-    // 2. Render Equity Curve Chart
-    const eqData = bt.equity_curve.map((e) => ({ time: e.time, value: e.equity }));
-    const benchData = bt.equity_curve.map((e) => ({ time: e.time, value: e.benchmark }));
-
-    equitySeries.setData(eqData);
-    benchmarkSeries.setData(benchData);
-    equityChart.timeScale().fitContent();
-
-    // 3. KPI Cards
-    const isProfit = bt.net_profit >= 0;
-    btNetProfit.textContent = `$${bt.net_profit.toLocaleString()} (${isProfit ? "+" : ""}${bt.net_profit_pct}%)`;
-    btNetProfit.className = `metric-value font-mono ${isProfit ? "text-bull" : "text-bear"}`;
-    btBenchmarkReturn.textContent = `Buy & Hold: ${bt.benchmark_return_pct >= 0 ? "+" : ""}${bt.benchmark_return_pct}%`;
-
-    btWinRate.textContent = `${bt.win_rate_pct}%`;
-    btWinRate.className = `metric-value font-mono ${bt.win_rate_pct >= 50 ? "text-bull" : "text-bear"}`;
-    btTradesCount.textContent = `${bt.winning_trades} Kazanan / ${bt.losing_trades} Kaybeden (${bt.total_trades} Toplam)`;
-
-    btProfitFactor.textContent = bt.profit_factor >= 999 ? "∞" : bt.profit_factor.toFixed(2);
-    btWinLossRatio.textContent = `Kazanç/Kayıp Oranı: ${bt.win_loss_ratio.toFixed(2)}`;
-
-    btMaxDrawdown.textContent = `-${bt.max_drawdown_pct}%`;
-    btMaxDrawdownUsd.textContent = `Düşüş Tutarı: -$${bt.max_drawdown_usd.toLocaleString()}`;
-
-    btSharpeSortino.textContent = `${bt.sharpe_ratio.toFixed(2)} / ${bt.sortino_ratio.toFixed(2)}`;
-    btAvgTrade.textContent = `Ort. İşlem: ${bt.avg_trade_pnl_pct >= 0 ? "+" : ""}${bt.avg_trade_pnl_pct}%`;
-
-    // 4. Trade Log Table
-    countTrades.textContent = bt.trades.length;
-    renderTradesTable(bt.trades);
-  }
-
-  function renderAnchorsTable(anchors) {
-    if (!anchors || anchors.length === 0) {
-      anchorsTableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Re-anchor pivot noktası bulunamadı.</td></tr>';
-      return;
+    // Render Equity Curves
+    if (bt.equity_curve && bt.equity_curve.length > 0) {
+      equitySeries.setData(
+        bt.equity_curve.map((e) => ({ time: e.time, value: e.equity }))
+      );
+      benchmarkSeries.setData(
+        bt.equity_curve.map((e) => ({ time: e.time, value: e.benchmark }))
+      );
+      equityChart.timeScale().fitContent();
     }
 
-    anchorsTableBody.innerHTML = anchors
-      .map((a) => {
-        const dateStr = new Date(a.time * 1000).toLocaleString("tr-TR");
-        const dirClass = a.dir > 0 ? "text-bull" : "text-bear";
-        const dirLabel = a.dir > 0 ? "+1 (Boğa / Dip Anchor)" : "-1 (Ayı / Tepe Anchor)";
-        const desc = a.label === "HH" ? "Yüksek Tepe (Higher High)" :
-                     a.label === "LH" ? "Düşük Tepe (Lower High)" :
-                     a.label === "LL" ? "Düşük Dip (Lower Low)" : "Yüksek Dip (Higher Low)";
+    // Backtest KPI Cards
+    const netProfit = Number(bt.net_profit || 0);
+    const netProfitPct = Number(bt.net_profit_pct || 0);
+    const isProfit = netProfit >= 0;
+    btNetProfit.textContent = `${isProfit ? "+" : ""}$${loc(netProfit, 2)} (${isProfit ? "+" : ""}${n(netProfitPct, 2)}%)`;
+    btNetProfit.className = `metric-value ${isProfit ? "bullish" : "bearish"}`;
 
-        return `
-          <tr>
-            <td>${dateStr}</td>
-            <td><span class="badge-mini ${a.label.includes('H') ? 'badge-hh' : 'badge-ll'}">${a.label}</span></td>
-            <td><strong>$${a.price.toLocaleString()}</strong></td>
-            <td class="${dirClass}">${dirLabel}</td>
-            <td>${a.segment_id}</td>
-            <td class="text-muted">${desc}</td>
-          </tr>
-        `;
-      })
-      .reverse()
-      .join("");
-  }
+    const bchReturn = Number(bt.benchmark_return_pct || 0);
+    const isBchProfit = bchReturn >= 0;
+    btBenchmarkReturn.textContent = `${isBchProfit ? "+" : ""}${n(bchReturn, 2)}% Al & Tut`;
+    btBenchmarkReturn.className = `metric-sub ${isBchProfit ? "bullish" : "bearish"}`;
 
-  function renderBarsTable(data) {
-    const candles = data.candles || [];
-    const vwaps = data.vwap_points || [];
-    const vwapLookup = new Map(vwaps.map((v) => [v.time, v]));
-    const recentCandles = candles.slice(-50).reverse();
+    btWinRate.textContent = `${n(bt.win_rate_pct, 1)}%`;
+    btTradesCount.textContent = `${bt.total_trades || 0} İşlem (${bt.winning_trades || 0} Kazanç / ${bt.losing_trades || 0} Kayıp)`;
 
-    barsTableBody.innerHTML = recentCandles
-      .map((c) => {
-        const dateStr = new Date(c.time * 1000).toLocaleDateString("tr-TR");
-        const v = vwapLookup.get(c.time);
-        const vwapVal = v ? `$${v.value.toFixed(2)}` : "-";
-        const dirVal = v ? (v.dir > 0 ? '<span class="text-bull">+1</span>' : '<span class="text-bear">-1</span>') : "-";
-        const segVal = v ? v.segment_id : "-";
-        const aptVal = v ? `${v.apt}` : "-";
+    const pf = Number(bt.profit_factor || 0);
+    btProfitFactor.textContent = pf > 0 ? (pf >= 999 ? "∞ (Kayıpsız)" : n(pf, 2)) : "0.00";
+    btWinLossRatio.textContent = `Kazanç/Kayıp: ${n(bt.win_loss_ratio, 2)}`;
 
-        return `
-          <tr>
-            <td>${dateStr}</td>
-            <td>${c.open.toFixed(2)}</td>
-            <td>${c.high.toFixed(2)}</td>
-            <td>${c.low.toFixed(2)}</td>
-            <td><strong>${c.close.toFixed(2)}</strong></td>
-            <td>${c.close >= c.open ? '<span class="text-bull">▲</span>' : '<span class="text-bear">▼</span>'}</td>
-            <td class="font-mono text-bull">${vwapVal}</td>
-            <td>${dirVal}</td>
-            <td>${segVal}</td>
-            <td>${aptVal}</td>
-          </tr>
-        `;
-      })
-      .join("");
-  }
+    btMaxDrawdown.textContent = `-${n(bt.max_drawdown_pct, 2)}%`;
+    btMaxDrawdownUsd.textContent = `-$${loc(bt.max_drawdown_usd, 2)}`;
 
-  function renderTradesTable(trades) {
-    if (!trades || trades.length === 0) {
-      tradesTableBody.innerHTML = '<tr><td colspan="12" class="text-center text-muted">İşlem gerçekleşmedi.</td></tr>';
-      return;
-    }
+    btSharpeSortino.textContent = `${n(bt.sharpe_ratio, 2)} / ${n(bt.sortino_ratio, 2)}`;
+    const avgTradePct = Number(bt.avg_trade_pnl_pct || 0);
+    btAvgTrade.textContent = `${avgTradePct >= 0 ? "+" : ""}${n(avgTradePct, 2)}% Ort. İşlem`;
 
-    tradesTableBody.innerHTML = trades
-      .map((t) => {
-        const entryStr = new Date(t.entry_time * 1000).toLocaleDateString("tr-TR");
-        const exitStr = new Date(t.exit_time * 1000).toLocaleDateString("tr-TR");
-        const isWin = t.pnl >= 0;
-        const dirBadge = t.direction === "LONG" ? '<span class="badge-trade long">LONG</span>' : '<span class="badge-trade short">SHORT</span>';
-        const pnlClass = isWin ? "text-bull" : "text-bear";
+    // Populate Backtest Trades Table
+    countTrades.textContent = `${bt.total_trades || 0} İşlem`;
+    tradesTableBody.innerHTML = "";
+    (bt.trades || []).slice().reverse().forEach((t) => {
+      const row = document.createElement("tr");
+      const isWin = Number(t.pnl || 0) >= 0;
+      const isLong = t.direction === "LONG";
+      const entryDt = t.entry_time ? new Date(t.entry_time * 1000).toLocaleString() : "—";
+      const exitDt = t.exit_time ? new Date(t.exit_time * 1000).toLocaleString() : "—";
 
-        return `
-          <tr data-entry-time="${t.entry_time}" data-exit-time="${t.exit_time}" title="Grafikte bu işleme odaklanmak için tıklayın">
-            <td>#${t.trade_id}</td>
-            <td>${entryStr}</td>
-            <td>${exitStr}</td>
-            <td>${dirBadge}</td>
-            <td>$${t.entry_price.toLocaleString()}</td>
-            <td>$${t.exit_price.toLocaleString()}</td>
-            <td>${t.size}</td>
-            <td class="${pnlClass}">$${t.pnl >= 0 ? "+" : ""}${t.pnl.toLocaleString()}</td>
-            <td class="${pnlClass}">${t.pnl_pct >= 0 ? "+" : ""}${t.pnl_pct}%</td>
-            <td>$${t.commission}</td>
-            <td><span class="badge-mini" style="background: var(--bg-hover); color: var(--text-secondary);">${t.exit_reason}</span></td>
-            <td>${t.bars_held}</td>
-          </tr>
-        `;
-      })
-      .reverse()
-      .join("");
-
-    // Click trade row to zoom chart to that trade
-    document.querySelectorAll("#tradesTableBody tr").forEach((row) => {
-      row.addEventListener("click", () => {
-        const entryTime = parseInt(row.dataset.entryTime);
-        const exitTime = parseInt(row.dataset.exitTime);
-        if (entryTime && btTradesChart) {
-          // Switch to Trades Chart tab if in Equity tab
-          if (currentBtChartTab !== "paneBtTrades") {
-            btnBtTabTrades.click();
-          }
-          const buffer = 86400 * 5; // 5 days buffer
-          btTradesChart.timeScale().setVisibleRange({
-            from: entryTime - buffer,
-            to: exitTime + buffer,
-          });
-        }
-      });
+      row.innerHTML = `
+        <td>#${t.trade_id || ''}</td>
+        <td><span class="regime-tag ${isLong ? "bull" : "bear"}">${t.direction || ''}</span></td>
+        <td>${entryDt}</td>
+        <td><strong>$${loc(t.entry_price, 2)}</strong></td>
+        <td>${exitDt}</td>
+        <td><strong>$${loc(t.exit_price, 2)}</strong></td>
+        <td class="${isWin ? "bullish" : "bearish"}"><strong>${isWin ? "+" : ""}$${loc(t.pnl, 2)}</strong></td>
+        <td class="${isWin ? "bullish" : "bearish"}"><strong>${isWin ? "+" : ""}${n(t.pnl_pct, 2)}%</strong></td>
+        <td><span class="badge-tag">${t.exit_reason || ''}</span></td>
+        <td>${t.bars_held || 0} bar</td>
+      `;
+      tradesTableBody.appendChild(row);
     });
   }
 
   // --------------------------------------------------------------------------
-  // 4. Mode Switcher & Sub-Tab Event Listeners
+  // 5. UI Event Handlers
   // --------------------------------------------------------------------------
+
+  // Mode Switcher (Chart vs Backtest)
   btnModeChart.addEventListener("click", () => {
     currentMode = "chart";
     btnModeChart.classList.add("active");
@@ -772,12 +926,13 @@ document.addEventListener("DOMContentLoaded", () => {
     viewChart.classList.add("active");
     viewBacktest.classList.remove("active");
     backtestSettingsGroup.style.display = "none";
-    btnRecalculateText.textContent = "Hesapla ve Güncelle";
+    btnRecalculateText.textContent = "Hesapla ve Grafiği Güncelle";
 
     setTimeout(() => {
-      if (!chart) initChart();
-      if (currentData) renderChartDashboard(currentData);
-      else loadChartData();
+      if (chart && container) {
+        chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
+        chart.timeScale().fitContent();
+      }
     }, 50);
   });
 
@@ -788,14 +943,21 @@ document.addEventListener("DOMContentLoaded", () => {
     viewBacktest.classList.add("active");
     viewChart.classList.remove("active");
     backtestSettingsGroup.style.display = "block";
-    btnRecalculateText.textContent = "Backtest'i Başlat";
+    btnRecalculateText.textContent = "Strateji Backtestini Çalıştır";
 
     setTimeout(() => {
-      if (!btTradesChart) initBtTradesChart();
-      if (!equityChart) initEquityChart();
-      if (currentBacktestData) renderBacktestDashboard(currentBacktestData);
-      else runBacktest();
+      if (currentBtChartTab === "paneBtTrades" && btTradesChart && btTradesContainer) {
+        btTradesChart.applyOptions({ width: btTradesContainer.clientWidth, height: btTradesContainer.clientHeight });
+        btTradesChart.timeScale().fitContent();
+      } else if (currentBtChartTab === "paneBtEquity" && equityChart && equityContainer) {
+        equityChart.applyOptions({ width: equityContainer.clientWidth, height: equityContainer.clientHeight });
+        equityChart.timeScale().fitContent();
+      }
     }, 50);
+
+    if (!currentBacktestData) {
+      runBacktest();
+    }
   });
 
   // Backtest Chart Tabs (Trades Chart vs Equity Curve)
@@ -861,13 +1023,14 @@ document.addEventListener("DOMContentLoaded", () => {
       btn.classList.add("active");
       currentTab = btn.dataset.tab;
       document.getElementById(currentTab).classList.add("active");
+      executeAction();
     });
   });
 
-  // Quick Chips
-  document.querySelectorAll(".quick-chips .chip").forEach((chip) => {
+  // Quick Chips in Live Ticker tab
+  document.querySelectorAll("#tab-ticker .quick-chips .chip").forEach((chip) => {
     chip.addEventListener("click", () => {
-      document.querySelectorAll(".quick-chips .chip").forEach((c) => c.classList.remove("active"));
+      document.querySelectorAll("#tab-ticker .quick-chips .chip").forEach((c) => c.classList.remove("active"));
       chip.classList.add("active");
       tickerInput.value = chip.dataset.symbol;
       executeAction();
@@ -1010,7 +1173,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `dsavwap_${currentTickerName.textContent.toLowerCase()}.csv`);
+    link.setAttribute("download", `dsavwap_${currentTickerName.textContent.toLowerCase().replace(/\s+/g, '_')}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1037,14 +1200,16 @@ document.addEventListener("DOMContentLoaded", () => {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.setAttribute("href", url);
-      link.setAttribute("download", `dsavwap_backtest_trades_${currentTickerName.textContent.toLowerCase()}.csv`);
+      link.setAttribute("download", `dsavwap_backtest_trades_${currentTickerName.textContent.toLowerCase().replace(/\s+/g, '_')}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
     });
   }
 
-  // Initial Load
+  // Initial Load: Discover NAU Catalog and Render First Chart
   initChart();
-  loadChartData();
+  fetchNauCatalog().then(() => {
+    loadChartData();
+  });
 });

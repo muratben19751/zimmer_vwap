@@ -1,5 +1,6 @@
 """
 FastAPI Server for Dynamic Swing Anchored VWAP Interactive Web Application & Backtest Terminal.
+Integrated with local NAU Project Data Provider (Nautilus Trader Catalog & Bybit Kline Cache).
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from dynamic_swing_anchored_vwap import (
     dynamic_swing_anchored_vwap,
     generate_synthetic_market_data,
 )
+from nau_data_provider import discover_nau_symbols, load_nau_bars
 
 app = FastAPI(title="Dynamic Swing Anchored VWAP Dashboard & Backtester")
 
@@ -39,9 +41,19 @@ os.makedirs(STATIC_DIR, exist_ok=True)
 
 
 class CalculationRequest(BaseModel):
+    data_source: str = "yahoo"  # "yahoo", "nau", "synthetic"
     ticker: Optional[str] = "BTC-USD"
     period: str = "6mo"
     interval: str = "1d"
+    
+    # NAU Data parameters
+    nau_symbol: Optional[str] = None
+    nau_source: Optional[str] = None  # "equity_catalog" | "bybit"
+    nau_category: Optional[str] = "linear"
+    nau_timeframe: Optional[str] = "1d"
+    nau_limit_bars: Optional[int] = 1000
+
+    # Indicator parameters
     swing_period: int = Field(default=50, ge=2)
     base_apt: float = Field(default=20.0, ge=1.0)
     use_adapt: bool = False
@@ -50,9 +62,19 @@ class CalculationRequest(BaseModel):
 
 
 class BacktestRequest(BaseModel):
+    data_source: str = "yahoo"  # "yahoo", "nau", "synthetic"
     ticker: Optional[str] = "BTC-USD"
     period: str = "1y"
     interval: str = "1d"
+    
+    # NAU Data parameters
+    nau_symbol: Optional[str] = None
+    nau_source: Optional[str] = None
+    nau_category: Optional[str] = "linear"
+    nau_timeframe: Optional[str] = "1d"
+    nau_limit_bars: Optional[int] = 2500
+
+    # Indicator parameters
     swing_period: int = Field(default=50, ge=2)
     base_apt: float = Field(default=20.0, ge=1.0)
     use_adapt: bool = False
@@ -222,18 +244,41 @@ def _dataframe_to_chart_response(
 
 
 def _fetch_or_generate_df(
-    use_synthetic: bool, ticker: Optional[str], period: str, interval: str
+    req: CalculationRequest | BacktestRequest,
 ) -> tuple[pd.DataFrame, str]:
-    if use_synthetic:
+    """Fetch requested data from NAU local store, synthetic engine, or Yahoo Finance."""
+    # 1. Synthetic data
+    if req.use_synthetic or req.data_source == "synthetic":
         df = generate_synthetic_market_data(n_bars=300, seed=42)
         return df, "Synthetic Market Data (300 Bars)"
 
-    ticker_sym = (ticker or "BTC-USD").strip().upper()
+    # 2. NAU Project local data store
+    if req.data_source == "nau":
+        sym = req.nau_symbol or req.ticker or "NVDA"
+        tf = req.nau_timeframe or req.interval or "1d"
+        limit = req.nau_limit_bars or 1000
+        try:
+            df, label = load_nau_bars(
+                symbol=sym,
+                timeframe=tf,
+                source=req.nau_source,
+                category=req.nau_category,
+                limit_bars=limit,
+            )
+            return df, label
+        except Exception as e:
+            raise HTTPException(
+                status_code=404,
+                detail=f"NAU Proje Verisi Yüklenemedi: {str(e)}"
+            )
+
+    # 3. Yahoo Finance live data
+    ticker_sym = (req.ticker or "BTC-USD").strip().upper()
     try:
         data = yf.download(
             ticker_sym,
-            period=period,
-            interval=interval,
+            period=req.period,
+            interval=req.interval,
             auto_adjust=True,
             progress=False,
         )
@@ -245,7 +290,7 @@ def _fetch_or_generate_df(
     if data is None or data.empty:
         raise HTTPException(
             status_code=404,
-            detail=f"No data found for ticker '{ticker_sym}' (period={period}, interval={interval})",
+            detail=f"No data found for ticker '{ticker_sym}' (period={req.period}, interval={req.interval})",
         )
 
     if isinstance(data.columns, pd.MultiIndex):
@@ -270,16 +315,26 @@ def _fetch_or_generate_df(
         index=data.index,
     )
     df.dropna(inplace=True)
-    return df, f"{ticker_sym} ({period}, {interval})"
+    return df, f"{ticker_sym} ({req.period}, {req.interval})"
+
+
+@app.get("/api/nau/catalog")
+async def nau_catalog_endpoint():
+    """Discover and return all available datasets from the NAU project repository."""
+    try:
+        catalog = discover_nau_symbols()
+        return catalog
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"NAU katalog taraması başarısız: {str(e)}"
+        )
 
 
 @app.post("/api/calculate")
 async def calculate_endpoint(req: CalculationRequest):
-    """Fetch ticker or synthetic data and calculate DSAVWAP."""
+    """Fetch data from NAU / Yahoo / Synthetic and calculate DSAVWAP."""
     try:
-        df, source_label = _fetch_or_generate_df(
-            req.use_synthetic, req.ticker, req.period, req.interval
-        )
+        df, source_label = _fetch_or_generate_df(req)
         out = dynamic_swing_anchored_vwap(
             df,
             swing_period=req.swing_period,
@@ -299,11 +354,9 @@ async def calculate_endpoint(req: CalculationRequest):
 
 @app.post("/api/backtest")
 async def backtest_endpoint(req: BacktestRequest):
-    """Run full strategy backtest on ticker or synthetic data."""
+    """Run full strategy backtest on NAU / Yahoo / Synthetic data."""
     try:
-        df, source_label = _fetch_or_generate_df(
-            req.use_synthetic, req.ticker, req.period, req.interval
-        )
+        df, source_label = _fetch_or_generate_df(req)
 
         out = dynamic_swing_anchored_vwap(
             df,
@@ -352,31 +405,48 @@ async def upload_csv_endpoint(
     use_adapt: bool = Form(False),
     vol_bias: float = Form(10.0),
 ):
-    """Calculate DSAVWAP from an uploaded CSV file."""
+    """Upload custom CSV dataset and calculate DSAVWAP."""
     try:
-        contents = await file.read()
-        df = pd.read_csv(
-            io.BytesIO(contents), index_col=0, parse_dates=True
-        )
+        content = await file.read()
+        df_raw = pd.read_csv(io.BytesIO(content))
 
-        col_map = {c.lower(): c for c in df.columns}
-        required = ["open", "high", "low", "close", "volume"]
+        # Identify date/datetime column
+        date_col = None
+        for col in df_raw.columns:
+            if col.lower() in ("date", "datetime", "time", "timestamp"):
+                date_col = col
+                break
+
+        if date_col is None:
+            date_col = df_raw.columns[0]
+
+        df_raw[date_col] = pd.to_datetime(df_raw[date_col])
+        df_raw.set_index(date_col, inplace=True)
+        df_raw.sort_index(inplace=True)
+
+        col_map = {c.lower(): c for c in df_raw.columns}
+        required = ["open", "high", "low", "close"]
         for r in required:
             if r not in col_map:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Uploaded CSV must contain columns: open, high, low, close, volume (found: {list(df.columns)})",
+                    detail=f"CSV must contain column '{r}' (case-insensitive)",
                 )
 
+        vol_col = col_map.get("volume", None)
         df = pd.DataFrame(
             {
-                "open": df[col_map["open"]],
-                "high": df[col_map["high"]],
-                "low": df[col_map["low"]],
-                "close": df[col_map["close"]],
-                "volume": df[col_map["volume"]],
+                "open": df_raw[col_map["open"]],
+                "high": df_raw[col_map["high"]],
+                "low": df_raw[col_map["low"]],
+                "close": df_raw[col_map["close"]],
+                "volume": (
+                    df_raw[vol_col]
+                    if vol_col
+                    else np.ones(len(df_raw), dtype=float)
+                ),
             },
-            index=df.index,
+            index=df_raw.index,
         )
         df.dropna(inplace=True)
 
@@ -400,7 +470,11 @@ async def upload_csv_endpoint(
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "indicator": "Dynamic Swing Anchored VWAP (Zeiierman)"}
+    return {
+        "status": "ok",
+        "indicator": "Dynamic Swing Anchored VWAP (Zeiierman)",
+        "nau_support": True,
+    }
 
 
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

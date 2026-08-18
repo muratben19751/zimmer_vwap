@@ -70,9 +70,12 @@
       <!-- LEFT CONTROL PANEL -->
       <aside class="sidebar">
         
-        <!-- Tab selector: Ticker vs CSV vs Synthetic -->
+        <!-- Tab selector: NAU vs Live Ticker vs CSV vs Synthetic -->
         <div class="source-tabs">
-          <button class="tab-btn active" data-tab="tab-ticker">
+          <button class="tab-btn active" data-tab="tab-nau">
+            <i data-lucide="database"></i> NAU Verileri
+          </button>
+          <button class="tab-btn" data-tab="tab-ticker">
             <i data-lucide="trending-up"></i> Canlı Sembol
           </button>
           <button class="tab-btn" data-tab="tab-csv">
@@ -85,8 +88,66 @@
 
         <div class="sidebar-content">
           
+          <!-- TAB 0: NAU PROJECT DATA (DEFAULT) -->
+          <div class="tab-pane active" id="tab-nau">
+            <!-- Source category toggle: US Equities vs Bybit Crypto -->
+            <div class="source-pill-switch">
+              <button class="source-pill-btn active" id="btnNauCatEquity" data-cat="equity">
+                <i data-lucide="building-2"></i> US Hisse / ETF
+              </button>
+              <button class="source-pill-btn" id="btnNauCatBybit" data-cat="bybit">
+                <i data-lucide="coins"></i> Kripto (Bybit)
+              </button>
+            </div>
+
+            <!-- NAU Symbol Picker -->
+            <div class="form-group" style="margin-top: 10px;">
+              <label for="nauSymbolSelect">NAU Sembolü</label>
+              <select id="nauSymbolSelect" class="form-select-lg"></select>
+            </div>
+
+            <!-- Quick Preset Chips for NAU -->
+            <div class="quick-chips" id="nauQuickChips">
+              <!-- Populated dynamically via app.js -->
+            </div>
+
+            <!-- Timeframe & Limit Bars Selection -->
+            <div class="form-row">
+              <div class="form-group">
+                <label for="nauTimeframeSelect">Zaman Dilimi</label>
+                <select id="nauTimeframeSelect">
+                  <option value="1m">1 Dakika (1m)</option>
+                  <option value="5m">5 Dakika (5m)</option>
+                  <option value="15m">15 Dakika (15m)</option>
+                  <option value="1h" selected>1 Saat (1h)</option>
+                  <option value="4h">4 Saat (4h)</option>
+                  <option value="1d">1 Gün (1d)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="nauLimitBarsSelect">Bar Sayısı</label>
+                <select id="nauLimitBarsSelect">
+                  <option value="500">Son 500 Bar</option>
+                  <option value="1000" selected>Son 1.000 Bar</option>
+                  <option value="2500">Son 2.500 Bar</option>
+                  <option value="5000">Son 5.000 Bar</option>
+                  <option value="0">Tüm Geçmiş</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- NAU Metadata Summary Card -->
+            <div class="nau-meta-card" id="nauMetaCard">
+              <div class="nau-meta-header">
+                <span class="nau-meta-title" id="nauMetaTitle">NAU Arşiv Detayları</span>
+                <span class="badge-tag" id="nauMetaBadge">Yerel Parquet</span>
+              </div>
+              <div class="nau-meta-desc" id="nauMetaDesc">Yükleniyor...</div>
+            </div>
+          </div>
+
           <!-- TAB 1: LIVE TICKER -->
-          <div class="tab-pane active" id="tab-ticker">
+          <div class="tab-pane" id="tab-ticker">
             <div class="form-group">
               <label for="tickerInput">Sembol / Ticker</label>
               <div class="input-with-action">
@@ -552,5 +613,6 @@
   </div>
 
   <script src="app.js"></script>
+  <script src="hub-nav.js"></script>
 </body>
 </html>
