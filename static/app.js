@@ -74,8 +74,8 @@ import * as Engine from "./engine.js";
     viewMode: localStorage.getItem("zvwap_view_mode") || "terminal",
     theme: localStorage.getItem("zvwap_theme") || "light",
     
-    // Handoff state (3 Yıl Varsayılan)
-    symbol: "nau:equity:NVDA",
+    // Handoff state (QQQ ve 3 Yıl Varsayılan)
+    symbol: "nau:equity:QQQ",
     tf: "1h",
     dateFrom: DEF_DATE_FROM,
     dateTo: DEF_DATE_TO,
@@ -83,7 +83,7 @@ import * as Engine from "./engine.js";
     params: { ...DEF_PARAMS, triggers: { ...DEF_PARAMS.triggers } },
     nauCatalog: null,
 
-    // Terminal state
+    // Terminal state (NAU QQQ Varsayılan)
     terminalSource: "nau",
     terminalNauCategory: "equity",
     terminalData: null,
@@ -302,10 +302,6 @@ import * as Engine from "./engine.js";
       if (!handoffLwChart) {
         initHandoffLightweightChart();
       }
-      setTimeout(() => {
-        resizeHandoffChart();
-        drawEquity();
-      }, 50);
       loadHandoffData();
     } else {
       btnViewTerminal.classList.add("active");
@@ -357,8 +353,10 @@ import * as Engine from "./engine.js";
           opt.value = `nau:equity:${eq.symbol}`;
           const countStr = eq.total_bars != null ? ` (${Number(eq.total_bars).toLocaleString()} Bar)` : "";
           opt.textContent = `${eq.symbol} — ${eq.venue || "NASDAQ"}${countStr}`;
+          if (eq.symbol === "QQQ") opt.selected = true;
           nauEquitiesGroup.appendChild(opt);
         });
+        if (symbolSelect) symbolSelect.value = "nau:equity:QQQ";
       }
 
       if (nauBybitGroup) {
@@ -389,11 +387,11 @@ import * as Engine from "./engine.js";
         opt.value = eq.symbol;
         const countStr = eq.total_bars != null ? ` (${Number(eq.total_bars).toLocaleString()} Bar)` : "";
         opt.textContent = `${eq.symbol} — ${eq.venue || "NASDAQ"}${countStr}`;
+        if (eq.symbol === "QQQ") opt.selected = true;
         termNauSymbolSelect.appendChild(opt);
       });
-      if (list.length > 0) {
-        termNauSymbolSelect.value = list[0].symbol;
-      }
+      const hasQQQ = list.some((eq) => eq.symbol === "QQQ");
+      termNauSymbolSelect.value = hasQQQ ? "QQQ" : (list.length > 0 ? list[0].symbol : "QQQ");
     } else {
       const list = (cat && cat.bybit && cat.bybit.length) ? cat.bybit : HARDCODED_BYBIT;
       list.forEach((by) => {
@@ -519,7 +517,7 @@ import * as Engine from "./engine.js";
     }
 
     if (!apiData || !apiData.candles || apiData.candles.length === 0) {
-      const cleanSym = state.symbol.replace(/^nau:[^:]+:/, "").split(":")[0] || "BTCUSDT";
+      const cleanSym = state.symbol.replace(/^nau:[^:]+:/, "").split(":")[0] || "QQQ";
       const rawBars = Engine.genData(cleanSym, state.tf, 420);
       const swings = Engine.computeSwings(rawBars, state.params.len);
       const vw = Engine.computeVWAP(rawBars, swings, state.params.m1, state.params.m2);
@@ -590,7 +588,12 @@ import * as Engine from "./engine.js";
     renderKpiTiles(met);
     renderPerformanceSummary(met);
     renderTradesTable(bt.trades, rawBars);
-    drawEquity();
+    
+    setTimeout(() => {
+      drawEquity();
+      resizeHandoffChart();
+    }, 40);
+
     setLoading(false);
   }
 
@@ -709,12 +712,20 @@ import * as Engine from "./engine.js";
   function drawEquity() {
     const cv = equityCanvas;
     const { equity, data, met } = renderState;
-    if (!cv || !equity || !equity.length || state.handoffTab !== "overview" || state.viewMode !== "handoff") return;
+    if (!cv || !equity || !equity.length) return;
 
     const wrap = equityWrap;
+    if (!wrap) return;
     const W = wrap.clientWidth;
     const H = wrap.clientHeight;
-    if (W < 40 || H < 40) return;
+    if (W < 40 || H < 40) {
+      requestAnimationFrame(() => {
+        if (equityWrap && equityWrap.clientWidth >= 40 && equityWrap.clientHeight >= 40) {
+          drawEquity();
+        }
+      });
+      return;
+    }
 
     const dpr = window.devicePixelRatio || 1;
     cv.width = W * dpr;
@@ -837,7 +848,15 @@ import * as Engine from "./engine.js";
   }
 
   function renderKpiTiles(m) {
-    if (!m || !kpiTilesContainer) return;
+    if (!kpiTilesContainer) return;
+    if (!m) {
+      kpiTilesContainer.innerHTML = `
+        <div style="grid-column: span 3; text-align: center; color: var(--text-muted); padding: 20px; font-size: 12px;">
+          <span class="hourglass-spinner">⏳</span> Metrikler hesaplanıyor…
+        </div>
+      `;
+      return;
+    }
     const pos = "bull-text", neg = "bear-text";
     const tiles = [
       { l: "Net Kar", v: fm(m.net), s: `${m.netPct >= 0 ? "+" : ""}${m.netPct.toFixed(2)}%`, c: m.net >= 0 ? pos : neg },
@@ -1000,7 +1019,7 @@ import * as Engine from "./engine.js";
 
     if (state.terminalSource === "nau") {
       payload.data_source = "nau";
-      const symVal = termNauSymbolSelect.value || "NVDA";
+      const symVal = termNauSymbolSelect.value || "QQQ";
       if (state.terminalNauCategory === "equity") {
         payload.nau_symbol = symVal;
         payload.nau_source = "equity_catalog";
@@ -1015,7 +1034,7 @@ import * as Engine from "./engine.js";
       payload.nau_limit_bars = parseInt(termNauLimitSelect.value) || 3000;
     } else if (state.terminalSource === "ticker") {
       payload.data_source = "yahoo";
-      payload.ticker = termTickerInput.value.trim() || "BTC-USD";
+      payload.ticker = termTickerInput.value.trim() || "QQQ";
       payload.period = termPeriodSelect.value || "3y";
       payload.interval = termIntervalSelect.value;
     } else {
@@ -1266,7 +1285,7 @@ import * as Engine from "./engine.js";
 
     sourceSelect.addEventListener("change", () => {
       if (sourceSelect.value === "nau") {
-        if (nauEquitiesGroup.firstChild) symbolSelect.value = nauEquitiesGroup.firstChild.value;
+        if (nauEquitiesGroup.firstChild) symbolSelect.value = "nau:equity:QQQ";
       } else {
         symbolSelect.value = "BTCUSDT";
       }
@@ -1323,7 +1342,9 @@ import * as Engine from "./engine.js";
         btn.style.borderBottom = "2px solid var(--accent)";
         content.style.display = id === "perf" ? "block" : "flex";
         state.handoffTab = id;
-        if (id === "overview") drawEquity();
+        if (id === "overview") {
+          setTimeout(() => drawEquity(), 20);
+        }
       });
     });
 
