@@ -1,10 +1,15 @@
 /* ==========================================================================
-   Zimmer VWAP Backtester — Design Tokens & Styles
-   Handoff Implementation: Light (Default) / Dark (TradingView) / Terminal (Amber)
+   Zimmer VWAP Backtester & Terminal — Hybrid Design System
+   Dual Interface:
+     1. Handoff Mode: High-Fidelity Compact TradingView Strategy Tester
+     2. Terminal Mode: Extended Lightweight Charts + Full Sidebar Terminal
    ========================================================================== */
 
+/* --------------------------------------------------------------------------
+   1. Theme Variables
+   -------------------------------------------------------------------------- */
 :root {
-  /* Default: Light Theme */
+  /* Light Theme (Default) */
   --bg-app: #ffffff;
   --bg-panel: #f7f8fb;
   --bg-card: #f7f8fb;
@@ -102,7 +107,9 @@
   --font-ui: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
 
-/* Reset & Base */
+/* --------------------------------------------------------------------------
+   2. Reset & Layout
+   -------------------------------------------------------------------------- */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -118,585 +125,307 @@ html, body {
   font-family: var(--font-ui);
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  color: var(--accent);
-  text-decoration: none;
-}
-a:hover {
-  text-decoration: underline;
-}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
 
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 4px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
 
 input:focus, select:focus, button:focus {
   outline: 1px solid var(--accent);
 }
 
-/* App Container Layout */
-.app-container {
+.view-mode-container {
   display: flex;
   flex-direction: column;
   height: 100vh;
   width: 100vw;
-  background-color: var(--bg-app);
   overflow: hidden;
 }
 
-/* 1. Top Toolbar (48px) */
-.top-toolbar {
-  height: 48px;
-  flex: none;
+/* --------------------------------------------------------------------------
+   3. View Switcher Pill
+   -------------------------------------------------------------------------- */
+.view-switcher-wrap {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 12px;
-  background-color: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
-  z-index: 10;
-}
-
-.brand-logo {
-  width: 28px;
-  height: 28px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  background-color: var(--accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 15px;
-  color: #ffffff;
-  flex: none;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-}
-
-[data-theme="terminal"] .brand-logo {
-  color: #0b0e14;
-}
-
-.brand-info {
-  line-height: 1.15;
-}
-.brand-title {
-  font-weight: 700;
-  font-size: 13px;
-  color: var(--text-strong);
-}
-.brand-subtitle {
-  font-size: 10px;
-  color: var(--text-muted);
-}
-
-.toolbar-divider {
-  width: 1px;
-  height: 24px;
-  background-color: var(--border);
-  flex: none;
-}
-
-/* Select & Inputs */
-.toolbar-select {
-  background-color: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-main);
-  padding: 6px 8px;
-  font-size: 13px;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-  height: 32px;
-}
-
-.segmented-control {
-  display: flex;
-  gap: 2px;
-  background-color: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 4px;
   padding: 2px;
   height: 32px;
-  align-items: center;
 }
 
-.seg-btn {
-  padding: 4px 9px;
+.view-switch-btn {
+  padding: 4px 10px;
   border: none;
-  border-radius: 3px;
-  cursor: pointer;
+  border-radius: 4px;
   font-size: 12px;
   font-weight: 600;
   font-family: inherit;
-  background-color: transparent;
+  cursor: pointer;
+  background: transparent;
   color: var(--text-muted);
-  transition: background-color 0.15s, color 0.15s;
-}
-.seg-btn:hover {
-  color: var(--text-strong);
-}
-.seg-btn.active {
-  background-color: var(--border);
-  color: var(--text-strong);
-}
-
-.date-range-group {
   display: flex;
   align-items: center;
-  gap: 6px;
-}
-.date-input {
-  background-color: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-main);
-  padding: 4px 6px;
-  font-size: 11px;
-  font-family: inherit;
-  height: 28px;
+  gap: 5px;
+  transition: background 0.15s, color 0.15s;
 }
 
-.source-badge {
+.view-switch-btn:hover {
+  color: var(--text-strong);
+}
+
+.view-switch-btn.active {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+[data-theme="terminal"] .view-switch-btn.active {
+  color: #0b0e14;
+}
+
+/* --------------------------------------------------------------------------
+   4. Common UI Elements
+   -------------------------------------------------------------------------- */
+.btn-primary {
+  background-color: var(--accent);
+  border: none;
+  border-radius: 4px;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 8px 16px;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-size: 11px;
+  gap: 6px;
+  transition: background-color 0.15s;
+}
+.btn-primary:hover { background-color: var(--accent-hover); }
+
+.badge-tag {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
   font-weight: 600;
-  padding: 3px 7px;
-  border-radius: 4px;
-  background-color: var(--border-subtle);
+  background: var(--border-subtle);
   color: var(--text-secondary);
   border: 1px solid var(--border);
 }
 
-.theme-switch {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.run-btn {
-  background-color: var(--accent);
-  border: none;
-  border-radius: 4px;
-  color: #ffffff;
+.badge-pivot {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
   font-weight: 700;
-  font-size: 12px;
-  font-family: inherit;
-  padding: 8px 16px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  transition: background-color 0.15s, transform 0.05s;
 }
-[data-theme="terminal"] .run-btn {
-  color: #0b0e14;
-}
-.run-btn:hover {
-  background-color: var(--accent-hover);
-}
-.run-btn:active {
-  transform: scale(0.98);
-}
+.badge-high { background: rgba(242, 54, 69, 0.15); color: var(--bear); border: 1px solid rgba(242, 54, 69, 0.3); }
+.badge-low { background: rgba(8, 153, 129, 0.15); color: var(--bull); border: 1px solid rgba(8, 153, 129, 0.3); }
 
-/* 2. Main Row Layout */
-.main-row {
+.regime-tag {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.regime-tag.bull { background: rgba(8, 153, 129, 0.15); color: var(--bull); }
+.regime-tag.bear { background: rgba(242, 54, 69, 0.15); color: var(--bear); }
+
+.bull-text { color: var(--bull) !important; }
+.bear-text { color: var(--bear) !important; }
+.align-right { text-align: right; }
+.pad-l-16 { padding-left: 16px; }
+
+/* --------------------------------------------------------------------------
+   5. Terminal View Specific Layout
+   -------------------------------------------------------------------------- */
+.terminal-layout {
   display: flex;
   flex: 1;
   min-height: 0;
   overflow: hidden;
 }
 
-/* Left Chart & Backtest Column */
-.chart-col {
+.terminal-sidebar {
+  width: 340px;
+  flex: none;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.terminal-main {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  padding: 16px;
+  gap: 16px;
 }
 
-/* Interactive Chart Canvas Wrap */
-.chart-canvas-wrap {
-  flex: 1;
-  position: relative;
-  min-height: 0;
-  background-color: var(--bg-app);
+/* Source Tabs (4 columns) */
+.source-tabs-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
 }
 
-.chart-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-  cursor: crosshair;
+.source-tab-btn {
+  padding: 6px 2px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s;
+}
+.source-tab-btn.active {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
 }
 
-/* 3. Strategy Tester Bottom Panel (272px) */
-.tester-panel {
-  height: 272px;
-  flex: none;
-  border-top: 1px solid var(--border);
+.sidebar-form-content {
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  background-color: var(--bg-app);
+  gap: 12px;
 }
 
-.tester-tabs-bar {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 0 8px;
-  background-color: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
-  flex: none;
-  height: 34px;
-}
-
-.tester-title {
-  font-weight: 700;
-  font-size: 12px;
-  color: var(--text-strong);
-  margin-right: 12px;
-}
-
-.tester-tab-btn {
-  padding: 6px 12px;
-  border: none;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-  font-family: inherit;
-  background-color: transparent;
-  color: var(--text-muted);
-  border-bottom: 2px solid transparent;
-  height: 34px;
-  transition: color 0.15s, border-color 0.15s;
-}
-.tester-tab-btn:hover {
-  color: var(--text-strong);
-}
-.tester-tab-btn.active {
-  color: var(--accent);
-  border-bottom: 2px solid var(--accent);
-}
-
-.tab-content {
-  flex: 1;
-  min-height: 0;
-  display: none;
-}
-.tab-content.active {
-  display: flex;
-}
-
-/* Overview Tab */
-.overview-grid-left {
-  width: 452px;
-  flex: none;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  padding: 12px;
-  align-content: start;
-  border-right: 1px solid var(--border-subtle);
-  overflow-y: auto;
-}
-
-.metric-tile {
-  background-color: var(--bg-card);
+.form-group-card {
+  background: var(--bg-app);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px 12px;
-}
-
-.metric-tile-label {
-  font-size: 10px;
-  color: var(--text-muted);
-  letter-spacing: 0.3px;
-  text-transform: uppercase;
-}
-
-.metric-tile-value {
-  font-size: 17px;
-  font-weight: 700;
-  font-family: var(--font-mono);
-  margin-top: 4px;
-}
-
-.metric-tile-sub {
-  font-size: 10px;
-  color: var(--text-muted);
-  margin-top: 2px;
-}
-
-.overview-equity-wrap {
-  flex: 1;
-  position: relative;
-  min-width: 0;
-}
-
-.equity-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-/* Performance Summary Tab */
-.perf-tab-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 10px 16px;
-}
-
-.perf-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0 40px;
-}
-
-.perf-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.perf-label {
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
-.perf-value {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-/* Trades List Tab */
-.trades-tab-content {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
   display: flex;
   flex-direction: column;
+  gap: 8px;
 }
 
-.trades-header-row {
+.form-group-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-strong);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* KPI Banner Cards */
+.kpi-banner-grid {
   display: grid;
-  grid-template-columns: 36px 52px minmax(95px, 1fr) 88px minmax(95px, 1fr) 88px 105px 96px 65px 96px;
-  white-space: nowrap;
-  overflow: hidden;
-  padding: 7px 12px;
-  font-size: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.kpi-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kpi-card-label {
+  font-size: 11px;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.4px;
-  position: sticky;
-  top: 0;
-  background-color: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
-  z-index: 1;
   font-weight: 600;
 }
 
-.trades-data-rows {
-  flex: 1;
-  overflow-y: auto;
-}
-
-.trade-row {
-  display: grid;
-  grid-template-columns: 36px 52px minmax(95px, 1fr) 88px minmax(95px, 1fr) 88px 105px 96px 65px 96px;
-  white-space: nowrap;
-  overflow: hidden;
-  padding: 6px 12px;
-  font-size: 12px;
-  border-bottom: 1px solid var(--border-subtle);
+.kpi-card-val {
+  font-size: 20px;
+  font-weight: 700;
   font-family: var(--font-mono);
-  transition: background-color 0.1s;
-}
-.trade-row:hover {
-  background-color: var(--bg-hover);
 }
 
-/* 4. Right Parameter Sidebar (288px) */
-.params-sidebar {
-  width: 288px;
-  flex: none;
-  border-left: 1px solid var(--border);
-  background-color: var(--bg-panel);
+.kpi-card-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Inspector Card */
+.inspector-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
-.sidebar-section-title {
-  padding: 12px 14px 6px;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--text-muted);
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-}
-
-.param-input-row {
+.inspector-head {
+  padding: 8px 12px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 5px 14px;
+  justify-content: space-between;
 }
 
-.param-label {
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
-.param-input {
-  background-color: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-main);
-  padding: 5px 8px;
-  font-size: 12px;
-  width: 88px;
-  text-align: right;
-  font-family: var(--font-mono);
-  height: 28px;
-}
-
-.param-select {
-  background-color: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-main);
-  padding: 5px 8px;
-  font-size: 12px;
-  width: 106px;
-  cursor: pointer;
-  height: 28px;
-  font-family: inherit;
-}
-
-.param-actions {
+.inspector-tabs {
   display: flex;
-  gap: 8px;
-  padding: 14px;
+  gap: 4px;
 }
 
-.btn-apply {
-  flex: 1;
-  background-color: var(--accent);
+.inspector-tab {
+  padding: 5px 10px;
   border: none;
   border-radius: 4px;
-  color: #ffffff;
-  font-weight: 700;
+  background: transparent;
+  color: var(--text-muted);
   font-size: 12px;
-  font-family: inherit;
-  padding: 9px 0;
+  font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.15s;
 }
-[data-theme="terminal"] .btn-apply {
-  color: #0b0e14;
-}
-.btn-apply:hover {
-  background-color: var(--accent-hover);
-}
-
-.btn-reset {
-  background-color: transparent;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-family: inherit;
-  padding: 9px 12px;
-  cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
-}
-.btn-reset:hover {
-  border-color: var(--text-secondary);
+.inspector-tab.active {
+  background: var(--border);
   color: var(--text-strong);
 }
 
-.strategy-info-box {
-  margin: 0 14px 14px;
-  padding: 10px 12px;
-  background-color: var(--bg-app);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 1.5;
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
 }
 
-.info-box-head {
+.data-table th {
+  padding: 8px 12px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 10px;
   font-weight: 700;
-  color: var(--text-secondary);
-  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
 }
 
-/* 5. Status Bar (26px) */
-.status-bar {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  height: 26px;
-  padding: 0 12px;
-  background-color: var(--bg-panel);
-  border-top: 1px solid var(--border);
-  flex: none;
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.status-left {
+.data-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
   font-family: var(--font-mono);
 }
 
-.status-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.status-badge-demo {
-  color: var(--warning);
-  font-weight: 600;
-}
-
-/* Utility Helpers */
-.bull-text {
-  color: var(--bull) !important;
-}
-.bear-text {
-  color: var(--bear) !important;
-}
-.muted-text {
-  color: var(--text-muted) !important;
-}
-
-.align-right {
-  text-align: right;
-}
-.pad-l-16 {
-  padding-left: 16px;
+.data-table tr:hover {
+  background: var(--bg-hover);
 }
