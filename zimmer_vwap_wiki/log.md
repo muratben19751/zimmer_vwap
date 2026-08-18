@@ -26,3 +26,11 @@ Bu dosya, wiki üzerinde yapılan tüm senkronizasyon, ekleme, düzeltme ve anal
 - **Tutorials:**
   - `tutorial_running_backtest`: Sıfırdan backtest çalıştırma ve sonuçları yorumlama rehberi
 - **Lint Durumu:** İlk geçiş tamamlandı.
+
+## [2026-08-18] — Özellik Güncellemesi: Terminal Varsayılanı, 3 Yıl Aralığı, Buy&Hold, Kum Saati & Pivot Tetikleyicileri
+- **İlk Açılış:** Varsayılan görünüm modu `terminal` (Genişletilmiş Terminal) olarak ayarlandı.
+- **Tarih Aralığı:** Varsayılan tarih aralığı bugünden geriye 3 yıl (`DEF_DATE_FROM` / `DEF_DATE_TO`) yapıldı.
+- **Buy & Hold Benchmark:** Genel Bakış KPI kartlarına, Özkaynak Eğrisi grafiğine (mor kesikli çizgi) ve Performans Özeti tablosuna Buy & Hold getirisi eklendi.
+- **Kum Saati Animasyonu:** Hesaplama sırasında dönen kum saati (`⏳`, `hourglass-flip` keyframes) göstergesi üst çubuğa ve butonlara eklendi.
+- **Pivot Tetikleyicileri:** Sağ parametre paneline HH, HL, LH, LL onay kutuları eklendi (tümü varsayılan seçili). Seçilen pivotlara göre alım/satım filtrelemesi devreye alındı.
+

@@ -47,6 +47,8 @@ export function genData(symbol, tf, bars = 420) {
 
 export function computeSwings(data, len) {
   const sw = [];
+  let lastH = null,
+    lastL = null;
   for (let i = len; i < data.length - len; i++) {
     let isH = true,
       isL = true;
@@ -55,8 +57,17 @@ export function computeSwings(data, len) {
       if (data[j].l < data[i].l) isL = false;
       if (!isH && !isL) break;
     }
-    if (isH) sw.push({ i, type: "H", price: data[i].h, conf: i + len });
-    else if (isL) sw.push({ i, type: "L", price: data[i].l, conf: i + len });
+    if (isH) {
+      const price = data[i].h;
+      const label = lastH === null ? "HH" : price >= lastH ? "HH" : "LH";
+      lastH = price;
+      sw.push({ i, type: "H", price, conf: i + len, label });
+    } else if (isL) {
+      const price = data[i].l;
+      const label = lastL === null ? "LL" : price <= lastL ? "LL" : "HL";
+      lastL = price;
+      sw.push({ i, type: "L", price, conf: i + len, label });
+    }
   }
   return sw;
 }
@@ -70,7 +81,11 @@ export function computeVWAP(data, swings, m1 = 1, m2 = 2) {
     sumP2V = 0;
   for (let i = 0; i < data.length; i++) {
     while (sIdx < swings.length && swings[sIdx].conf <= i) {
-      anchor = { i: swings[sIdx].i, type: swings[sIdx].type };
+      anchor = {
+        i: swings[sIdx].i,
+        type: swings[sIdx].type,
+        label: swings[sIdx].label || (swings[sIdx].type === "H" ? "HH" : "LL"),
+      };
       sIdx++;
       sumPV = 0;
       sumV = 0;
@@ -86,7 +101,7 @@ export function computeVWAP(data, swings, m1 = 1, m2 = 2) {
     const tp = (data[i].h + data[i].l + data[i].c) / 3;
     sumPV += tp * data[i].v;
     sumV += data[i].v;
-    sumP2V += tp * tp * data[i].v;
+    sumP2V += tp * tp * data[j = i].v;
     const v = sumPV / sumV;
     const sd = Math.sqrt(Math.max(0, sumP2V / sumV - v * v));
     out[i] = {
@@ -97,6 +112,7 @@ export function computeVWAP(data, swings, m1 = 1, m2 = 2) {
       l2: v - sd * m2,
       aType: anchor.type,
       aI: anchor.i,
+      aLabel: anchor.label,
       sd,
     };
   }
@@ -110,6 +126,7 @@ export function backtest(data, vw, p) {
     pos = null,
     commTotal = 0;
   const fee = (n) => (n * p.commPct) / 100;
+  const triggers = p.triggers || { HH: true, HL: true, LH: true, LL: true };
 
   for (let i = 0; i < data.length; i++) {
     const b = data[i],
@@ -171,10 +188,22 @@ export function backtest(data, vw, p) {
         }
       }
       if (!pos) {
+        const activeLabel = w.aLabel || (w.aType === "L" ? "LL" : "HH");
+        const isTriggerAllowed = triggers[activeLabel] !== false;
+
         const longSig =
-          p.dir !== "short" && w.aType === "L" && pc <= pw.v && c > w.v;
+          isTriggerAllowed &&
+          p.dir !== "short" &&
+          w.aType === "L" &&
+          pc <= pw.v &&
+          c > w.v;
         const shortSig =
-          p.dir !== "long" && w.aType === "H" && pc >= pw.v && c < w.v;
+          isTriggerAllowed &&
+          p.dir !== "long" &&
+          w.aType === "H" &&
+          pc >= pw.v &&
+          c < w.v;
+
         if (longSig || shortSig) {
           const qty = (cash * p.sizePct) / 100 / c;
           const f = fee(qty * c);
@@ -210,7 +239,7 @@ export function backtest(data, vw, p) {
   return { trades, equity, commTotal };
 }
 
-export function metrics(trades, equity, capital, tf) {
+export function metrics(trades, equity, capital, tf, data = []) {
   const closed = trades.filter((t) => t.xi != null);
   const wins = closed.filter((t) => t.pnl > 0),
     losses = closed.filter((t) => t.pnl <= 0);
@@ -229,7 +258,7 @@ export function metrics(trades, equity, capital, tf) {
   }
   const rets = [];
   for (let i = 1; i < equity.length; i++)
-    rets.push(equity[i].v / equity[i-1].v - 1);
+    rets.push(equity[i].v / equity[i - 1].v - 1);
   const mean = rets.length ? rets.reduce((a, b) => a + b, 0) / rets.length : 0;
   const sd =
     Math.sqrt(
@@ -242,6 +271,17 @@ export function metrics(trades, equity, capital, tf) {
     365;
   const net = equity.length ? equity[equity.length - 1].v - capital : 0;
   const longs = closed.filter((t) => t.side === "L").length;
+
+  let buyHold = 0,
+    buyHoldPct = 0;
+  if (data && data.length > 1) {
+    const firstPrice = data[0].c || data[0].close || 1;
+    const lastPrice =
+      data[data.length - 1].c || data[data.length - 1].close || firstPrice;
+    buyHoldPct = firstPrice > 0 ? ((lastPrice - firstPrice) / firstPrice) * 100 : 0;
+    buyHold = capital * (buyHoldPct / 100);
+  }
+
   return {
     net,
     netPct: (net / capital) * 100,
@@ -258,5 +298,7 @@ export function metrics(trades, equity, capital, tf) {
     gl,
     longs,
     shorts: closed.length - longs,
+    buyHold,
+    buyHoldPct,
   };
 }

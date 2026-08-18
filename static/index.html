@@ -104,6 +104,12 @@
 
       <div style="flex: 1" id="toolbarSpacer"></div>
 
+      <!-- Kum Saati Hesaplama Animasyonu -->
+      <div id="calcLoadingIndicator" style="display: none; align-items: center; gap: 6px; background: rgba(41, 98, 255, 0.12); border: 1px solid var(--accent); color: var(--accent); padding: 4px 10px; border-radius: 16px; font-size: 11px; font-weight: 700;">
+        <span class="hourglass-spinner">⏳</span>
+        <span>Hesaplanıyor…</span>
+      </div>
+
       <!-- Tema Seçici -->
       <select id="themeSelect" style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; color: var(--text-main); padding: 4px 6px; font-size: 11px; cursor: pointer; height: 28px;" title="Tema Değiştir">
         <option value="light">☀️ Açık (Light)</option>
@@ -113,7 +119,7 @@
 
       <!-- Kompakt Backtest Çalıştır Butonu -->
       <button id="btnRunBacktest" style="background: var(--accent); border: none; border-radius: 4px; color: #fff; font-weight: 700; font-size: 12px; padding: 7px 14px; cursor: pointer; display: flex; align-items: center; gap: 5px;">
-        ▶ Backtest Çalıştır
+        <span id="btnRunIcon">▶</span> Backtest Çalıştır
       </button>
     </header>
 
@@ -223,7 +229,31 @@
             <input type="number" id="paramCommPct" value="0.05" min="0" max="2" step="0.01" style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; color: var(--text-main); padding: 5px 8px; font-size: 12px; width: 84px; text-align: right; font-family: var(--font-mono);" />
           </div>
 
-          <div style="display: flex; gap: 8px; padding: 14px;">
+          <div style="padding: 14px 14px 6px; font-size: 10px; font-weight: 700; color: var(--text-muted); letter-spacing: 0.6px; text-transform: uppercase;">TETİKLEYİCİ PİVOTLAR (GİRİŞ/ÇIKIŞ)</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; padding: 4px 14px 8px;">
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer; color: var(--text-main);" title="Higher High (Tepe)">
+              <input type="checkbox" id="triggerHH" checked style="cursor: pointer;" />
+              <span class="badge-pivot badge-high" style="font-size: 9px; padding: 1px 4px;">HH</span>
+              <span>Higher High</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer; color: var(--text-main);" title="Higher Low (Dip)">
+              <input type="checkbox" id="triggerHL" checked style="cursor: pointer;" />
+              <span class="badge-pivot badge-low" style="font-size: 9px; padding: 1px 4px;">HL</span>
+              <span>Higher Low</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer; color: var(--text-main);" title="Lower High (Tepe)">
+              <input type="checkbox" id="triggerLH" checked style="cursor: pointer;" />
+              <span class="badge-pivot badge-high" style="font-size: 9px; padding: 1px 4px;">LH</span>
+              <span>Lower High</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer; color: var(--text-main);" title="Lower Low (Dip)">
+              <input type="checkbox" id="triggerLL" checked style="cursor: pointer;" />
+              <span class="badge-pivot badge-low" style="font-size: 9px; padding: 1px 4px;">LL</span>
+              <span>Lower Low</span>
+            </label>
+          </div>
+
+          <div style="display: flex; gap: 8px; padding: 10px 14px 14px;">
             <button id="btnApplyParams" style="flex: 1; background: var(--accent); border: none; border-radius: 4px; color: #fff; font-weight: 700; font-size: 12px; padding: 9px 0; cursor: pointer;">Uygula</button>
             <button id="btnResetParams" style="background: transparent; border: 1px solid var(--border); border-radius: 4px; color: var(--text-secondary); font-size: 12px; padding: 9px 12px; cursor: pointer;">Varsayılan</button>
           </div>
@@ -445,7 +475,7 @@
 
   </div>
 
-  <script type="module" src="app.js?t=20260818_engine_v7"></script>
+  <script type="module" src="app.js?t=20260818_engine_v8"></script>
   <script src="hub-nav.js"></script>
 </body>
 </html>

@@ -22,10 +22,13 @@ last_updated: 2026-08-18
    - Fiyat alt banda ($\text{VWAP} - m_2 \cdot \sigma$) dokunduğunda Long açılışı.
    - Fiyat üst banda ($\text{VWAP} + m_2 \cdot \sigma$) dokunduğunda Short açılışı.
    - Kar alımı orta VWAP çizgisine dönüldüğünde tetiklenir.
+3. **Seçilebilir Pivot Tetikleyicileri (HH, HL, LH, LL)**:
+   - Kullanıcı stratejinin yalnızca belirli piyasa yapısı pivotlarında (örneğin sadece `HL` ve `LL` diplerinde veya `HH` ve `LH` tepelerinde) işlem açmasını seçebilir.
 
-## Risk Yönetimi
+## Risk Yönetimi ve Kıyaslama
 - **Pozisyon Büyüklüğü**: Toplam sermayenin yüzde cinsinden (`sizePct`, varsayılan %20) bir kısmı ile işlem açılır.
 - **Komisyon Modeli**: Her işlemde alış ve satışta varsayılan %0.05 oranında komisyon kesilir.
+- **Buy & Hold Kıyaslaması (Benchmark)**: Strateji özkaynak eğrisi, aynı dönemdeki Al ve Tut (Buy & Hold) getirisiyle görsel ve sayısal olarak kıyaslanır.
 - **Performans Ölçümü**: Sermaye eğrisi üzerinden Maksimum Düşüş (MDD), Sharpe Oranı, Kazanma Oranı ve Kar Faktörü hesaplanır.
 
 Uygulama ayrıntıları için [[backtest_engine]] sayfasına bakın.
