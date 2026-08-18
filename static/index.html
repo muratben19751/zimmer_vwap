@@ -404,15 +404,17 @@
         </div>
 
         <!-- Alt Tablo Denetçisi -->
-        <div class="inspector-card" style="min-height: 240px; flex: 1;">
+        <div class="inspector-card" style="min-height: 280px; flex: 1;">
           <div class="inspector-head">
             <div class="inspector-tabs">
               <button class="inspector-tab active" id="termTabInspectorAnchors">Pivot Çapaları</button>
               <button class="inspector-tab" id="termTabInspectorBars">Son 100 Bar</button>
+              <button class="inspector-tab" id="termTabInspectorBacktest" style="color: var(--accent); font-weight: 700;">🎯 Strateji Backtest (İşlemler)</button>
             </div>
             <span class="badge-tag" id="termInspectorCount">0 Kayıt</span>
           </div>
-          <div style="flex: 1; overflow-y: auto; max-height: 280px;">
+          <div id="termBacktestSummaryBar" style="display: none; padding: 6px 12px; background: var(--bg-card); border-bottom: 1px solid var(--border); font-size: 11px; align-items: center; justify-content: space-between;"></div>
+          <div style="flex: 1; overflow-y: auto; max-height: 320px;">
             <table class="data-table" id="termDataTable">
               <thead id="termTableHead">
                 <tr>
@@ -437,7 +439,7 @@
 
   </div>
 
-  <script type="module" src="app.js?t=20260818_fixsymbols_v3"></script>
+  <script type="module" src="app.js?t=20260818_backtest_v4"></script>
   <script src="hub-nav.js"></script>
 </body>
 </html>

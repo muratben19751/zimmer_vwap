@@ -1139,7 +1139,10 @@ import * as Engine from "./engine.js";
 
   function renderTerminalInspectorTable(data) {
     if (!termTableBody) return;
+    const termBacktestSummaryBar = document.getElementById("termBacktestSummaryBar");
+
     if (state.terminalInspectorTab === "anchors") {
+      if (termBacktestSummaryBar) termBacktestSummaryBar.style.display = "none";
       termTableHead.innerHTML = `
         <tr>
           <th>Tür</th>
@@ -1164,7 +1167,8 @@ import * as Engine from "./engine.js";
           </tr>
         `;
       }).join("");
-    } else {
+    } else if (state.terminalInspectorTab === "bars") {
+      if (termBacktestSummaryBar) termBacktestSummaryBar.style.display = "none";
       termTableHead.innerHTML = `
         <tr>
           <th>Tarih</th>
@@ -1187,6 +1191,70 @@ import * as Engine from "./engine.js";
           <td>${c.close.toLocaleString()}</td>
         </tr>
       `).join("");
+    } else if (state.terminalInspectorTab === "backtest") {
+      // Run client-side backtest on current candles
+      const rawBars = (data.candles || []).map((c, i) => ({
+        t: c.time * 1000,
+        o: c.open,
+        h: c.high,
+        l: c.low,
+        c: c.close,
+        v: data.volumes && data.volumes[i] ? data.volumes[i].value : 1000,
+      }));
+
+      const swings = Engine.computeSwings(rawBars, state.params.len);
+      const vw = Engine.computeVWAP(rawBars, swings, state.params.m1, state.params.m2);
+      const bt = Engine.backtest(rawBars, vw, state.params);
+      const met = Engine.metrics(bt.trades, bt.equity, state.params.capital, "1h");
+
+      if (termBacktestSummaryBar) {
+        termBacktestSummaryBar.style.display = "flex";
+        termBacktestSummaryBar.innerHTML = `
+          <div><strong style="color:var(--text-muted)">Net K/Z:</strong> <span class="${met.net >= 0 ? 'bull-text' : 'bear-text'}" style="font-weight:700">${fm(met.net)} (${met.netPct >= 0 ? '+' : ''}${met.netPct.toFixed(2)}%)</span></div>
+          <div><strong style="color:var(--text-muted)">Kazanma:</strong> <span style="font-weight:700">${met.winRate.toFixed(1)}%</span> (${met.wins}K / ${met.losses}Z)</div>
+          <div><strong style="color:var(--text-muted)">Profit Factor:</strong> <span style="font-weight:700">${isFinite(met.pf) ? met.pf.toFixed(2) : '∞'}</span></div>
+          <div><strong style="color:var(--text-muted)">Maks Düşüş:</strong> <span class="bear-text" style="font-weight:700">−${met.mddPct.toFixed(2)}%</span></div>
+          <div><strong style="color:var(--text-muted)">Toplam:</strong> <span style="font-weight:700">${bt.trades.length} İşlem</span></div>
+        `;
+      }
+
+      termTableHead.innerHTML = `
+        <tr>
+          <th>#</th>
+          <th>Yön</th>
+          <th>Giriş Zamanı</th>
+          <th>Giriş ($)</th>
+          <th>Çıkış Zamanı</th>
+          <th>Çıkış ($)</th>
+          <th>Neden</th>
+          <th>Net K/Z ($)</th>
+          <th>Getiri (%)</th>
+          <th>Kümülatif ($)</th>
+        </tr>
+      `;
+      termInspectorCount.textContent = `${bt.trades.length} İşlem`;
+
+      let cum = 0;
+      termTableBody.innerHTML = bt.trades.map((t, i) => {
+        cum += t.pnl;
+        const isLong = t.side === "L";
+        const isWin = t.pnl >= 0;
+        const pos = "bull-text", neg = "bear-text";
+        return `
+          <tr>
+            <td>${i + 1}</td>
+            <td><strong class="${isLong ? pos : neg}">${isLong ? "UZUN" : "KISA"}</strong></td>
+            <td>${rawBars[t.ei] ? new Date(rawBars[t.ei].t).toLocaleString() : "—"}</td>
+            <td>${fp(t.entry)}</td>
+            <td>${t.xi != null && rawBars[t.xi] ? new Date(rawBars[t.xi].t).toLocaleString() : "—"}</td>
+            <td>${t.exit != null ? fp(t.exit) : "—"}</td>
+            <td style="font-family:var(--font-ui)">${t.reason}</td>
+            <td><strong class="${isWin ? pos : neg}">${fm(t.pnl)}</strong></td>
+            <td class="${isWin ? pos : neg}">${t.pnlPct != null ? (t.pnlPct >= 0 ? "+" : "") + t.pnlPct.toFixed(2) + "%" : "—"}</td>
+            <td>${fm(cum)}</td>
+          </tr>
+        `;
+      }).join("") || `<tr><td colspan="10" style="text-align:center;color:var(--text-muted)">İşlem sinyali oluşmadı.</td></tr>`;
     }
   }
 
@@ -1371,10 +1439,12 @@ import * as Engine from "./engine.js";
     termPrdSlider.addEventListener("input", () => { termPrdVal.textContent = termPrdSlider.value; });
     termAptSlider.addEventListener("input", () => { termAptVal.textContent = termAptSlider.value; });
     termBtnCalculate.addEventListener("click", () => loadTerminalData());
+    const termTabInspectorBacktest = document.getElementById("termTabInspectorBacktest");
 
     termTabInspectorAnchors.addEventListener("click", () => {
       termTabInspectorAnchors.classList.add("active");
       termTabInspectorBars.classList.remove("active");
+      if (termTabInspectorBacktest) termTabInspectorBacktest.classList.remove("active");
       state.terminalInspectorTab = "anchors";
       if (state.terminalData) renderTerminalInspectorTable(state.terminalData);
     });
@@ -1382,9 +1452,20 @@ import * as Engine from "./engine.js";
     termTabInspectorBars.addEventListener("click", () => {
       termTabInspectorBars.classList.add("active");
       termTabInspectorAnchors.classList.remove("active");
+      if (termTabInspectorBacktest) termTabInspectorBacktest.classList.remove("active");
       state.terminalInspectorTab = "bars";
       if (state.terminalData) renderTerminalInspectorTable(state.terminalData);
     });
+
+    if (termTabInspectorBacktest) {
+      termTabInspectorBacktest.addEventListener("click", () => {
+        termTabInspectorBacktest.classList.add("active");
+        termTabInspectorAnchors.classList.remove("active");
+        termTabInspectorBars.classList.remove("active");
+        state.terminalInspectorTab = "backtest";
+        if (state.terminalData) renderTerminalInspectorTable(state.terminalData);
+      });
+    }
 
     // 5. Canvas Interactions (Zoom & Pan)
     chartCanvas.addEventListener("wheel", (e) => {
