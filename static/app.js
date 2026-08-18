@@ -283,7 +283,8 @@ import * as Engine from "./engine.js";
         (cat.equities || []).forEach((eq) => {
           const opt = document.createElement("option");
           opt.value = `nau:equity:${eq.symbol}`;
-          opt.textContent = `${eq.symbol} — (${eq.exchange}, ${eq.total_bars.toLocaleString()} Bar)`;
+          const countStr = eq.total_bars != null ? ` (${Number(eq.total_bars).toLocaleString()} Bar)` : "";
+          opt.textContent = `${eq.symbol} — ${eq.venue || "NASDAQ"}${countStr}`;
           nauEquitiesGroup.appendChild(opt);
         });
       }
@@ -292,8 +293,8 @@ import * as Engine from "./engine.js";
         nauBybitGroup.innerHTML = "";
         (cat.bybit || []).forEach((by) => {
           const opt = document.createElement("option");
-          opt.value = `nau:bybit:${by.symbol}:${by.category}:${by.timeframe}`;
-          opt.textContent = `${by.symbol} [${by.category.toUpperCase()}] — (${by.timeframe}, ${by.total_bars.toLocaleString()} Bar)`;
+          opt.value = `nau:bybit:${by.symbol}:${by.category || "linear"}`;
+          opt.textContent = `${by.symbol} [${(by.category || "LINEAR").toUpperCase()}]`;
           nauBybitGroup.appendChild(opt);
         });
       }
@@ -301,18 +302,20 @@ import * as Engine from "./engine.js";
       // Populate Terminal Selectors
       updateTerminalSymbolSelect(cat);
     } catch (e) {
-      console.warn("NAU Catalog fetch hatası:", e);
+      console.error("NAU Catalog fetch hatası:", e);
     }
   }
 
   function updateTerminalSymbolSelect(cat = state.nauCatalog) {
     if (!termNauSymbolSelect || !cat) return;
     termNauSymbolSelect.innerHTML = "";
+
     if (state.terminalNauCategory === "equity") {
       (cat.equities || []).forEach((eq) => {
         const opt = document.createElement("option");
         opt.value = eq.symbol;
-        opt.textContent = `${eq.symbol} — (${eq.exchange}, ${eq.total_bars.toLocaleString()} Bar)`;
+        const countStr = eq.total_bars != null ? ` (${Number(eq.total_bars).toLocaleString()} Bar)` : "";
+        opt.textContent = `${eq.symbol} — ${eq.venue || "NASDAQ"}${countStr}`;
         termNauSymbolSelect.appendChild(opt);
       });
       if (cat.equities && cat.equities.length > 0) {
@@ -321,12 +324,12 @@ import * as Engine from "./engine.js";
     } else {
       (cat.bybit || []).forEach((by) => {
         const opt = document.createElement("option");
-        opt.value = `${by.symbol}:${by.category}`;
-        opt.textContent = `${by.symbol} [${by.category.toUpperCase()}] — (${by.timeframe})`;
+        opt.value = `${by.symbol}:${by.category || "linear"}`;
+        opt.textContent = `${by.symbol} [${(by.category || "LINEAR").toUpperCase()}]`;
         termNauSymbolSelect.appendChild(opt);
       });
       if (cat.bybit && cat.bybit.length > 0) {
-        termNauSymbolSelect.value = `${cat.bybit[0].symbol}:${cat.bybit[0].category}`;
+        termNauSymbolSelect.value = `${cat.bybit[0].symbol}:${cat.bybit[0].category || "linear"}`;
       }
     }
   }
