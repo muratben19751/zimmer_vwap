@@ -40,6 +40,17 @@ STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 os.makedirs(STATIC_DIR, exist_ok=True)
 
 
+@app.middleware("http")
+async def add_no_cache_header(request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path.endswith((".html", ".js", ".css")) or path == "/":
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
 class CalculationRequest(BaseModel):
     data_source: str = "yahoo"  # "yahoo", "nau", "synthetic"
     ticker: Optional[str] = "BTC-USD"
@@ -477,7 +488,16 @@ async def health():
     }
 
 
-app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+class NoCacheStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+
+app.mount("/", NoCacheStaticFiles(directory=STATIC_DIR, html=True), name="static")
 
 
 if __name__ == "__main__":

@@ -3,8 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <title>Zimmer VWAP — Dynamic Swing Anchored VWAP Backtester & Terminal</title>
-  <link rel="stylesheet" href="style.css?v=20260818_hybrid" />
+  <link rel="stylesheet" href="style.css?t=20260818_fixsymbols_v3" />
   <!-- TradingView Lightweight Charts Library (for Extended Terminal mode) -->
   <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -52,8 +55,36 @@
             <option value="XAUUSD">XAUUSD</option>
             <option value="EURUSD">EURUSD</option>
           </optgroup>
-          <optgroup id="nauEquitiesGroup" label="NAU · US Hisse / ETF"></optgroup>
-          <optgroup id="nauBybitGroup" label="NAU · Bybit Kline Arşivi"></optgroup>
+          <optgroup id="nauEquitiesGroup" label="NAU · US Hisse / ETF">
+            <option value="nau:equity:NVDA">NVDA — NASDAQ (58,988 Bar)</option>
+            <option value="nau:equity:AAPL">AAPL — NASDAQ (58,988 Bar)</option>
+            <option value="nau:equity:TSLA">TSLA — NASDAQ (58,988 Bar)</option>
+            <option value="nau:equity:AMD">AMD — NASDAQ (58,988 Bar)</option>
+            <option value="nau:equity:AMZN">AMZN — NASDAQ (58,988 Bar)</option>
+            <option value="nau:equity:MSFT">MSFT — NASDAQ (58,988 Bar)</option>
+            <option value="nau:equity:GOOGL">GOOGL — NASDAQ (58,988 Bar)</option>
+            <option value="nau:equity:META">META — NASDAQ (58,988 Bar)</option>
+            <option value="nau:equity:SPY">SPY — NASDAQ (58,988 Bar)</option>
+            <option value="nau:equity:QQQ">QQQ — NASDAQ (58,988 Bar)</option>
+            <option value="nau:equity:QQQC">QQQC — NASDAQ (58,988 Bar)</option>
+            <option value="nau:equity:QQQQ">QQQQ — NASDAQ (58,988 Bar)</option>
+            <option value="nau:equity:IWM">IWM — NASDAQ (58,988 Bar)</option>
+            <option value="nau:equity:HOOD">HOOD — NASDAQ (58,988 Bar)</option>
+            <option value="nau:equity:IBM">IBM — NASDAQ (58,988 Bar)</option>
+            <option value="nau:equity:AA">AA — NASDAQ (58,988 Bar)</option>
+          </optgroup>
+          <optgroup id="nauBybitGroup" label="NAU · Bybit Kline Arşivi">
+            <option value="nau:bybit:BTCUSDT:linear">BTCUSDT [LINEAR]</option>
+            <option value="nau:bybit:ETHUSDT:linear">ETHUSDT [LINEAR]</option>
+            <option value="nau:bybit:SOLUSDT:linear">SOLUSDT [LINEAR]</option>
+            <option value="nau:bybit:DOGEUSDT:linear">DOGEUSDT [LINEAR]</option>
+            <option value="nau:bybit:BTCUSDT:spot">BTCUSDT [SPOT]</option>
+            <option value="nau:bybit:ETHUSDT:spot">ETHUSDT [SPOT]</option>
+            <option value="nau:bybit:SOLUSDT:spot">SOLUSDT [SPOT]</option>
+            <option value="nau:bybit:BTCUSDT:inverse">BTCUSDT [INVERSE]</option>
+            <option value="nau:bybit:ETHUSDT:inverse">ETHUSDT [INVERSE]</option>
+            <option value="nau:bybit:SOLUSDT:inverse">SOLUSDT [INVERSE]</option>
+          </optgroup>
         </select>
 
         <div id="tfSegment" style="display: flex; gap: 2px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; padding: 2px; height: 30px; align-items: center;">
@@ -245,7 +276,24 @@
             </div>
 
             <label style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Sembol Seç</label>
-            <select id="termNauSymbolSelect" style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; padding: 6px; font-size: 12px; font-weight: 600; color: var(--text-main);"></select>
+            <select id="termNauSymbolSelect" style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; padding: 6px; font-size: 12px; font-weight: 600; color: var(--text-main);">
+              <option value="NVDA" selected>NVDA — NASDAQ (58,988 Bar)</option>
+              <option value="AAPL">AAPL — NASDAQ (58,988 Bar)</option>
+              <option value="TSLA">TSLA — NASDAQ (58,988 Bar)</option>
+              <option value="AMD">AMD — NASDAQ (58,988 Bar)</option>
+              <option value="AMZN">AMZN — NASDAQ (58,988 Bar)</option>
+              <option value="MSFT">MSFT — NASDAQ (58,988 Bar)</option>
+              <option value="GOOGL">GOOGL — NASDAQ (58,988 Bar)</option>
+              <option value="META">META — NASDAQ (58,988 Bar)</option>
+              <option value="SPY">SPY — NASDAQ (58,988 Bar)</option>
+              <option value="QQQ">QQQ — NASDAQ (58,988 Bar)</option>
+              <option value="QQQC">QQQC — NASDAQ (58,988 Bar)</option>
+              <option value="QQQQ">QQQQ — NASDAQ (58,988 Bar)</option>
+              <option value="IWM">IWM — NASDAQ (58,988 Bar)</option>
+              <option value="HOOD">HOOD — NASDAQ (58,988 Bar)</option>
+              <option value="IBM">IBM — NASDAQ (58,988 Bar)</option>
+              <option value="AA">AA — NASDAQ (58,988 Bar)</option>
+            </select>
 
             <div style="display: flex; gap: 8px;">
               <div style="flex: 1;">
@@ -389,7 +437,7 @@
 
   </div>
 
-  <script type="module" src="app.js?v=20260818_hybrid"></script>
+  <script type="module" src="app.js?t=20260818_fixsymbols_v3"></script>
   <script src="hub-nav.js"></script>
 </body>
 </html>

@@ -270,17 +270,49 @@ import * as Engine from "./engine.js";
   // --------------------------------------------------------------------------
   // 5. NAU Catalog & Data Loading
   // --------------------------------------------------------------------------
+  const HARDCODED_EQUITIES = [
+    { symbol: "NVDA", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "AAPL", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "TSLA", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "AMD", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "AMZN", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "MSFT", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "GOOGL", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "META", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "SPY", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "QQQ", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "QQQC", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "QQQQ", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "IWM", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "HOOD", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "IBM", venue: "NASDAQ", total_bars: 58988 },
+    { symbol: "AA", venue: "NASDAQ", total_bars: 58988 },
+  ];
+
+  const HARDCODED_BYBIT = [
+    { symbol: "BTCUSDT", category: "linear" },
+    { symbol: "ETHUSDT", category: "linear" },
+    { symbol: "SOLUSDT", category: "linear" },
+    { symbol: "DOGEUSDT", category: "linear" },
+    { symbol: "BTCUSDT", category: "spot" },
+    { symbol: "ETHUSDT", category: "spot" },
+    { symbol: "SOLUSDT", category: "spot" },
+    { symbol: "BTCUSDT", category: "inverse" },
+    { symbol: "ETHUSDT", category: "inverse" },
+    { symbol: "SOLUSDT", category: "inverse" },
+  ];
+
   async function fetchNauCatalog() {
     try {
       const res = await fetch("/api/nau/catalog");
-      if (!res.ok) return;
+      if (!res.ok) throw new Error("Catalog fetch failed");
       const cat = await res.json();
       state.nauCatalog = cat;
 
       // Populate Handoff Optgroups
       if (nauEquitiesGroup) {
         nauEquitiesGroup.innerHTML = "";
-        (cat.equities || []).forEach((eq) => {
+        (cat.equities || HARDCODED_EQUITIES).forEach((eq) => {
           const opt = document.createElement("option");
           opt.value = `nau:equity:${eq.symbol}`;
           const countStr = eq.total_bars != null ? ` (${Number(eq.total_bars).toLocaleString()} Bar)` : "";
@@ -291,7 +323,7 @@ import * as Engine from "./engine.js";
 
       if (nauBybitGroup) {
         nauBybitGroup.innerHTML = "";
-        (cat.bybit || []).forEach((by) => {
+        (cat.bybit || HARDCODED_BYBIT).forEach((by) => {
           const opt = document.createElement("option");
           opt.value = `nau:bybit:${by.symbol}:${by.category || "linear"}`;
           opt.textContent = `${by.symbol} [${(by.category || "LINEAR").toUpperCase()}]`;
@@ -302,34 +334,37 @@ import * as Engine from "./engine.js";
       // Populate Terminal Selectors
       updateTerminalSymbolSelect(cat);
     } catch (e) {
-      console.error("NAU Catalog fetch hatası:", e);
+      console.warn("NAU Catalog fetch hatası, varsayılanlar yükleniyor:", e);
+      updateTerminalSymbolSelect(null);
     }
   }
 
   function updateTerminalSymbolSelect(cat = state.nauCatalog) {
-    if (!termNauSymbolSelect || !cat) return;
+    if (!termNauSymbolSelect) return;
     termNauSymbolSelect.innerHTML = "";
 
     if (state.terminalNauCategory === "equity") {
-      (cat.equities || []).forEach((eq) => {
+      const list = (cat && cat.equities && cat.equities.length) ? cat.equities : HARDCODED_EQUITIES;
+      list.forEach((eq) => {
         const opt = document.createElement("option");
         opt.value = eq.symbol;
         const countStr = eq.total_bars != null ? ` (${Number(eq.total_bars).toLocaleString()} Bar)` : "";
         opt.textContent = `${eq.symbol} — ${eq.venue || "NASDAQ"}${countStr}`;
         termNauSymbolSelect.appendChild(opt);
       });
-      if (cat.equities && cat.equities.length > 0) {
-        termNauSymbolSelect.value = cat.equities[0].symbol;
+      if (list.length > 0) {
+        termNauSymbolSelect.value = list[0].symbol;
       }
     } else {
-      (cat.bybit || []).forEach((by) => {
+      const list = (cat && cat.bybit && cat.bybit.length) ? cat.bybit : HARDCODED_BYBIT;
+      list.forEach((by) => {
         const opt = document.createElement("option");
         opt.value = `${by.symbol}:${by.category || "linear"}`;
         opt.textContent = `${by.symbol} [${(by.category || "LINEAR").toUpperCase()}]`;
         termNauSymbolSelect.appendChild(opt);
       });
-      if (cat.bybit && cat.bybit.length > 0) {
-        termNauSymbolSelect.value = `${cat.bybit[0].symbol}:${cat.bybit[0].category || "linear"}`;
+      if (list.length > 0) {
+        termNauSymbolSelect.value = `${list[0].symbol}:${list[0].category || "linear"}`;
       }
     }
   }
