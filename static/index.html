@@ -4,31 +4,130 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Zimmer VWAP — Dynamic Swing Anchored VWAP Backtester</title>
-  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* Reset & Base */
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #ffffff;
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      font-family: -apple-system, 'Segoe UI', 'Trebuchet MS', system-ui, sans-serif;
+      font-size: 13px;
+      color: #24293a;
+      -webkit-font-smoothing: antialiased;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    a { color: #2962ff; text-decoration: none; }
+    a:hover { color: #5b8cff; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-thumb { background: #c9ccd6; border-radius: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    input:focus, select:focus, button:focus { outline: 1px solid #2962ff; }
+
+    /* Theme Variables */
+    :root {
+      --bg-app: #ffffff;
+      --bg-panel: #f7f8fb;
+      --bg-card: #f7f8fb;
+      --bg-input: #ffffff;
+      --border: #e0e3eb;
+      --border-subtle: #eef0f5;
+      --text-strong: #131722;
+      --text-main: #24293a;
+      --text-secondary: #50535e;
+      --text-muted: #6f737f;
+      --accent: #2962ff;
+      --accent-hover: #1e53e5;
+      --bull: #089981;
+      --bear: #f23645;
+      --band-fill: rgba(41, 98, 255, 0.07);
+      --band-line1: rgba(41, 98, 255, 0.4);
+      --band-line2: rgba(41, 98, 255, 0.25);
+      --crosshair-line: #758696;
+      --crosshair-tag-bg: #363a45;
+      --crosshair-tag-text: #ffffff;
+      --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    }
+    [data-theme="dark"] {
+      --bg-app: #131722;
+      --bg-panel: #1e222d;
+      --bg-card: #1e222d;
+      --bg-input: #131722;
+      --border: #2a2e39;
+      --border-subtle: #1c2030;
+      --text-strong: #f0f3fa;
+      --text-main: #d1d4dc;
+      --text-secondary: #a3a6af;
+      --text-muted: #787b86;
+      --accent: #2962ff;
+      --accent-hover: #1e53e5;
+      --bull: #089981;
+      --bear: #f23645;
+      --band-fill: rgba(41, 98, 255, 0.12);
+      --band-line1: rgba(41, 98, 255, 0.55);
+      --band-line2: rgba(41, 98, 255, 0.35);
+      --crosshair-line: #50535e;
+      --crosshair-tag-bg: #2a2e39;
+      --crosshair-tag-text: #f0f3fa;
+    }
+    [data-theme="terminal"] {
+      --bg-app: #0b0e14;
+      --bg-panel: #121722;
+      --bg-card: #121722;
+      --bg-input: #0b0e14;
+      --border: #1f2735;
+      --border-subtle: #18202d;
+      --text-strong: #f7a600;
+      --text-main: #e6e8ee;
+      --text-secondary: #a0a6b5;
+      --text-muted: #6b7280;
+      --accent: #f7a600;
+      --accent-hover: #d98f00;
+      --bull: #00e676;
+      --bear: #ff1744;
+      --band-fill: rgba(247, 166, 0, 0.08);
+      --band-line1: rgba(247, 166, 0, 0.45);
+      --band-line2: rgba(247, 166, 0, 0.25);
+      --crosshair-line: #f7a600;
+      --crosshair-tag-bg: #1f2735;
+      --crosshair-tag-text: #f7a600;
+      --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    }
+
+    body {
+      background-color: var(--bg-app);
+      color: var(--text-main);
+    }
+  </style>
+  <link rel="stylesheet" href="style.css?v=20260818_hifi" />
 </head>
 <body>
-  <div class="app-container" data-screen-label="Backtester">
+  <!-- ANA KAPLAYICI (100vh Dikey Flex) -->
+  <div style="display:flex;flex-direction:column;height:100vh;background:var(--bg-app);color:var(--text-main);font-family:-apple-system,'Segoe UI','Trebuchet MS',sans-serif;font-size:13px;overflow:hidden" data-screen-label="Backtester">
     
     <!-- 1. ÜST ARAÇ ÇUBUĞU (48px) -->
-    <header class="top-toolbar">
-      <!-- Logo & Başlık -->
-      <div class="brand-logo">Z</div>
-      <div class="brand-info">
-        <div class="brand-title">Zimmer VWAP</div>
-        <div class="brand-subtitle">Dynamic Swing Anchored VWAP · Backtester</div>
+    <header style="display:flex;align-items:center;gap:12px;height:48px;padding:0 12px;background:var(--bg-panel);border-bottom:1px solid var(--border);flex:none">
+      <!-- Logo: 28x28px Mavi "Z" -->
+      <div style="width:28px;height:28px;border-radius:6px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;color:#fff;flex:none">Z</div>
+      
+      <!-- Başlık -->
+      <div style="line-height:1.15">
+        <div style="font-weight:700;font-size:13px;color:var(--text-strong)">Zimmer VWAP</div>
+        <div style="font-size:10px;color:var(--text-muted)">Dynamic Swing Anchored VWAP · Backtester</div>
       </div>
       
-      <div class="toolbar-divider"></div>
+      <div style="width:1px;height:24px;background:var(--border);flex:none"></div>
 
-      <!-- Veri Kaynağı & Sembol Seçimi -->
-      <select id="sourceSelect" class="toolbar-select" title="Veri Kaynağı">
+      <!-- Veri Kaynağı & Sembol Seçici -->
+      <select id="sourceSelect" style="background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-main);padding:6px 8px;font-size:13px;font-weight:600;cursor:pointer;height:32px" title="Veri Kaynağı">
+        <option value="synthetic" selected>Sentetik / Demo</option>
         <option value="nau">NAU Verileri (Polygon / Bybit)</option>
-        <option value="synthetic" selected>Sentetik / Demo Veri</option>
-        <option value="yahoo">Canlı Sembol (Yahoo Finance)</option>
+        <option value="yahoo">Yahoo Finance</option>
       </select>
 
-      <select id="symbolSelect" class="toolbar-select" title="Sembol Seç">
-        <!-- Demo Semboller (Varsayılan) -->
+      <select id="symbolSelect" style="background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-main);padding:6px 8px;font-size:13px;font-weight:600;cursor:pointer;height:32px" title="Sembol Seç">
         <optgroup label="Sentetik & Demo">
           <option value="BTCUSDT" selected>BTCUSDT</option>
           <option value="ETHUSDT">ETHUSDT</option>
@@ -36,110 +135,97 @@
           <option value="XAUUSD">XAUUSD</option>
           <option value="EURUSD">EURUSD</option>
         </optgroup>
-        <!-- NAU Sembolleri Dinamik Olarak Buraya Eklenir -->
         <optgroup id="nauEquitiesGroup" label="NAU · US Hisse / ETF"></optgroup>
         <optgroup id="nauBybitGroup" label="NAU · Bybit Kline Arşivi"></optgroup>
       </select>
 
       <!-- Zaman Dilimi Segmenti -->
-      <div class="segmented-control" id="tfSegment">
-        <button class="seg-btn" data-tf="5m">5m</button>
-        <button class="seg-btn" data-tf="15m">15m</button>
-        <button class="seg-btn active" data-tf="1h">1h</button>
-        <button class="seg-btn" data-tf="4h">4h</button>
-        <button class="seg-btn" data-tf="1D">1D</button>
+      <div id="tfSegment" style="display:flex;gap:2px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;padding:2px;height:32px;align-items:center">
+        <button class="seg-btn" data-tf="5m" style="padding:4px 9px;border:none;border-radius:3px;cursor:pointer;font-size:12px;font-weight:600;background:transparent;color:var(--text-muted)">5m</button>
+        <button class="seg-btn" data-tf="15m" style="padding:4px 9px;border:none;border-radius:3px;cursor:pointer;font-size:12px;font-weight:600;background:transparent;color:var(--text-muted)">15m</button>
+        <button class="seg-btn active" data-tf="1h" style="padding:4px 9px;border:none;border-radius:3px;cursor:pointer;font-size:12px;font-weight:600;background:var(--border);color:var(--text-strong)">1h</button>
+        <button class="seg-btn" data-tf="4h" style="padding:4px 9px;border:none;border-radius:3px;cursor:pointer;font-size:12px;font-weight:600;background:transparent;color:var(--text-muted)">4h</button>
+        <button class="seg-btn" data-tf="1D" style="padding:4px 9px;border:none;border-radius:3px;cursor:pointer;font-size:12px;font-weight:600;background:transparent;color:var(--text-muted)">1D</button>
       </div>
 
-      <div class="toolbar-divider"></div>
+      <div style="width:1px;height:24px;background:var(--border);flex:none"></div>
 
       <!-- Tarih Aralığı -->
-      <div class="date-range-group">
-        <span style="color: var(--text-muted); font-size: 11px;">Aralık</span>
-        <input type="date" id="dateFrom" class="date-input" title="Başlangıç Tarihi" />
-        <span style="color: var(--text-muted)">→</span>
-        <input type="date" id="dateTo" class="date-input" title="Bitiş Tarihi" />
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="color:var(--text-muted);font-size:11px">Aralık</span>
+        <input type="date" id="dateFrom" style="background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-main);padding:4px 6px;font-size:11px;height:28px" />
+        <span style="color:var(--text-muted)">→</span>
+        <input type="date" id="dateTo" style="background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-main);padding:4px 6px;font-size:11px;height:28px" />
       </div>
 
-      <div class="toolbar-divider"></div>
+      <div style="width:1px;height:24px;background:var(--border);flex:none"></div>
 
-      <!-- Tema Seçici (Light / Dark / Terminal) -->
-      <select id="themeSelect" class="toolbar-select" style="font-size: 11px; padding: 4px 6px;" title="Tema Seç">
+      <!-- Tema Seçici -->
+      <select id="themeSelect" style="background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-main);padding:4px 6px;font-size:11px;cursor:pointer;height:28px">
         <option value="light">☀️ Açık (Light)</option>
         <option value="dark">🌙 Koyu (TradingView)</option>
         <option value="terminal">📟 Terminal (Amber)</option>
       </select>
 
-      <div style="flex: 1"></div>
+      <div style="flex:1"></div>
 
-      <!-- Çalıştırma Özeti & Buton -->
-      <div id="ranLabel" style="font-size: 11px; color: var(--text-muted);">Hazır</div>
-      <button id="btnRunBacktest" class="run-btn">
-        <span>▶</span>
-        <span>Backtest Çalıştır</span>
+      <!-- Son Çalıştırma & Başlat Butonu -->
+      <div id="ranLabel" style="font-size:11px;color:var(--text-muted)">Hazır</div>
+      <button id="btnRunBacktest" style="background:var(--accent);border:none;border-radius:4px;color:#fff;font-weight:700;font-size:12px;padding:8px 16px;cursor:pointer;display:flex;align-items:center;gap:6px">
+        ▶ Backtest Çalıştır
       </button>
     </header>
 
-    <!-- 2. ANA SATIR (GRAFİK + TESTER + SAĞ PARAMETRE PANELİ) -->
-    <div class="main-row">
+    <!-- 2. ANA SATIR (Grafik + Alt Tester Paneli + Sağ Parametre Paneli) -->
+    <div style="display:flex;flex:1;min-height:0;overflow:hidden">
       
       <!-- Sol / Grafik & Strateji Test Aracı Sütunu -->
-      <div class="chart-col">
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden">
         
         <!-- Grafik Alanı (Canvas) -->
-        <div class="chart-canvas-wrap" id="chartWrap">
-          <canvas id="chartCanvas" class="chart-canvas"></canvas>
+        <div id="chartWrap" style="flex:1;position:relative;min-height:0;background:var(--bg-app)">
+          <canvas id="chartCanvas" style="position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair"></canvas>
         </div>
 
-        <!-- 3. Strateji Test Aracı Alt Paneli (272px) -->
-        <div class="tester-panel">
+        <!-- 3. Strateji Test Aracı Alt Paneli (272px sabit) -->
+        <div style="height:272px;flex:none;border-top:1px solid var(--border);display:flex;flex-direction:column;background:var(--bg-app)">
           
           <!-- Sekme Çubuğu (34px) -->
-          <div class="tester-tabs-bar">
-            <span class="tester-title">Strateji Test Aracı</span>
-            <button class="tester-tab-btn active" data-tab="overview" id="tabBtnOverview">Genel Bakış</button>
-            <button class="tester-tab-btn" data-tab="perf" id="tabBtnPerf">Performans Özeti</button>
-            <button class="tester-tab-btn" data-tab="trades" id="tabBtnTrades">İşlem Listesi (0)</button>
-            <div style="flex: 1"></div>
-            <button id="btnExportCsv" class="seg-btn" style="height: 24px; font-size: 11px; padding: 2px 8px; border: 1px solid var(--border);" title="İşlemleri CSV Olarak İndir">
+          <div style="display:flex;align-items:center;gap:2px;padding:0 8px;background:var(--bg-panel);border-bottom:1px solid var(--border);flex:none;height:34px">
+            <span style="font-weight:700;font-size:12px;color:var(--text-strong);margin-right:10px">Strateji Test Aracı</span>
+            <button id="tabBtnOverview" class="tester-tab-btn active" style="padding:6px 12px;border:none;cursor:pointer;font-size:12px;font-weight:600;background:transparent;color:var(--accent);border-bottom:2px solid var(--accent);height:34px">Genel Bakış</button>
+            <button id="tabBtnPerf" class="tester-tab-btn" style="padding:6px 12px;border:none;cursor:pointer;font-size:12px;font-weight:600;background:transparent;color:var(--text-muted);border-bottom:2px solid transparent;height:34px">Performans Özeti</button>
+            <button id="tabBtnTrades" class="tester-tab-btn" style="padding:6px 12px;border:none;cursor:pointer;font-size:12px;font-weight:600;background:transparent;color:var(--text-muted);border-bottom:2px solid transparent;height:34px">İşlem Listesi (0)</button>
+            <div style="flex:1"></div>
+            <button id="btnExportCsv" style="background:transparent;border:1px solid var(--border);border-radius:4px;color:var(--text-secondary);font-size:11px;padding:3px 8px;cursor:pointer">
               ⬇ CSV İndir
             </button>
           </div>
 
-          <!-- Sekme 1: Genel Bakış -->
-          <div class="tab-content active" id="contentOverview">
-            <!-- 3x2 Metrik Kartları (452px) -->
-            <div class="overview-grid-left" id="kpiTilesContainer">
-              <!-- Dinamik doldurulur -->
+          <!-- Sekme 1: Genel Bakış (452px 3x2 KPI Kartları + Özkaynak Eğrisi Canvas) -->
+          <div id="contentOverview" class="tab-content active" style="flex:1;display:flex;min-height:0">
+            <div id="kpiTilesContainer" style="width:452px;flex:none;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:12px;align-content:start;border-right:1px solid var(--border-subtle);overflow-y:auto">
+              <!-- KPI Kartları Dinamik Doldurulur -->
             </div>
-            <!-- Özkaynak Eğrisi Canvas -->
-            <div class="overview-equity-wrap" id="equityWrap">
-              <canvas id="equityCanvas" class="equity-canvas"></canvas>
+            <div id="equityWrap" style="flex:1;position:relative;min-width:0">
+              <canvas id="equityCanvas" style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
             </div>
           </div>
 
-          <!-- Sekme 2: Performans Özeti -->
-          <div class="tab-content perf-tab-content" id="contentPerf">
-            <div class="perf-grid" id="perfGridContainer">
-              <!-- Dinamik doldurulur -->
+          <!-- Sekme 2: Performans Özeti (3 Sütunlu Grid) -->
+          <div id="contentPerf" class="tab-content" style="flex:1;overflow-y:auto;padding:10px 16px;display:none">
+            <div id="perfGridContainer" style="display:grid;grid-template-columns:repeat(3,1fr);gap:0 40px">
+              <!-- Performans Kalemleri Dinamik Doldurulur -->
             </div>
           </div>
 
           <!-- Sekme 3: İşlem Listesi -->
-          <div class="tab-content trades-tab-content" id="contentTrades">
-            <div class="trades-header-row">
-              <span>#</span>
-              <span>Yön</span>
-              <span>Giriş Zamanı</span>
-              <span class="align-right">Giriş</span>
-              <span class="pad-l-16">Çıkış Zamanı</span>
-              <span class="align-right">Çıkış</span>
-              <span class="pad-l-16">Neden</span>
-              <span class="align-right">K/Z ($)</span>
-              <span class="align-right">K/Z %</span>
-              <span class="align-right">Kümülatif</span>
+          <div id="contentTrades" class="tab-content" style="flex:1;overflow-y:auto;min-height:0;display:none;flex-direction:column">
+            <div style="display:grid;grid-template-columns:32px 48px minmax(90px,1fr) 84px minmax(90px,1fr) 84px 96px 92px 60px 92px;white-space:nowrap;overflow:hidden;padding:7px 12px;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;position:sticky;top:0;background:var(--bg-panel);border-bottom:1px solid var(--border);z-index:1;font-weight:600">
+              <span>#</span><span>Yön</span><span>Giriş Zamanı</span><span style="text-align:right">Giriş</span><span style="padding-left:16px">Çıkış Zamanı</span><span style="text-align:right">Çıkış</span><span style="padding-left:16px">Neden</span><span style="text-align:right">K/Z ($)</span><span style="text-align:right">K/Z %</span><span style="text-align:right">Kümülatif</span>
             </div>
-            <div class="trades-data-rows" id="tradesRowsContainer">
-              <!-- Dinamik doldurulur -->
+            <div id="tradesRowsContainer" style="flex:1;overflow-y:auto">
+              <!-- İşlem Satırları Dinamik Doldurulur -->
             </div>
           </div>
 
@@ -147,81 +233,78 @@
 
       </div>
 
-      <!-- 4. Sağ Parametre Paneli (288px) -->
-      <aside class="params-sidebar">
+      <!-- 4. Sağ Parametre Paneli (288px sabit) -->
+      <aside style="width:288px;flex:none;border-left:1px solid var(--border);background:var(--bg-panel);display:flex;flex-direction:column;overflow-y:auto">
+        <div style="padding:12px 14px 6px;font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:0.6px;text-transform:uppercase">STRATEJİ PARAMETRELERİ</div>
         
-        <div class="sidebar-section-title">STRATEJİ PARAMETRELERİ</div>
-        
-        <div class="param-input-row">
-          <label class="param-label" for="paramLen">Swing Uzunluğu (bar)</label>
-          <input type="number" id="paramLen" class="param-input" value="8" min="2" max="200" step="1" />
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 14px">
+          <label style="color:var(--text-secondary);font-size:12px">Swing Uzunluğu (bar)</label>
+          <input type="number" id="paramLen" value="8" min="2" max="200" step="1" style="background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-main);padding:5px 8px;font-size:12px;width:84px;text-align:right;font-family:var(--font-mono)" />
         </div>
 
-        <div class="param-input-row">
-          <label class="param-label" for="paramM1">Bant 1 · σ çarpanı</label>
-          <input type="number" id="paramM1" class="param-input" value="1.0" min="0.1" max="10.0" step="0.1" />
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 14px">
+          <label style="color:var(--text-secondary);font-size:12px">Bant 1 · σ çarpanı</label>
+          <input type="number" id="paramM1" value="1.0" min="0.1" max="10.0" step="0.1" style="background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-main);padding:5px 8px;font-size:12px;width:84px;text-align:right;font-family:var(--font-mono)" />
         </div>
 
-        <div class="param-input-row">
-          <label class="param-label" for="paramM2">Bant 2 · σ çarpanı</label>
-          <input type="number" id="paramM2" class="param-input" value="2.0" min="0.1" max="10.0" step="0.1" />
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 14px">
+          <label style="color:var(--text-secondary);font-size:12px">Bant 2 · σ çarpanı</label>
+          <input type="number" id="paramM2" value="2.0" min="0.1" max="10.0" step="0.1" style="background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-main);padding:5px 8px;font-size:12px;width:84px;text-align:right;font-family:var(--font-mono)" />
         </div>
 
-        <div class="param-input-row">
-          <label class="param-label" for="paramDir">İşlem Yönü</label>
-          <select id="paramDir" class="param-select">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 14px">
+          <label style="color:var(--text-secondary);font-size:12px">İşlem Yönü</label>
+          <select id="paramDir" style="background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-main);padding:5px 8px;font-size:12px;width:102px;cursor:pointer">
             <option value="both" selected>Uzun + Kısa</option>
             <option value="long">Sadece Uzun</option>
             <option value="short">Sadece Kısa</option>
           </select>
         </div>
 
-        <div class="sidebar-section-title" style="margin-top: 8px;">EMİR AYARLARI</div>
+        <div style="padding:14px 14px 6px;font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:0.6px;text-transform:uppercase">EMİR AYARLARI</div>
 
-        <div class="param-input-row">
-          <label class="param-label" for="paramCapital">Sermaye ($)</label>
-          <input type="number" id="paramCapital" class="param-input" value="100000" min="100" step="1000" />
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 14px">
+          <label style="color:var(--text-secondary);font-size:12px">Sermaye ($)</label>
+          <input type="number" id="paramCapital" value="100000" min="100" step="1000" style="background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-main);padding:5px 8px;font-size:12px;width:84px;text-align:right;font-family:var(--font-mono)" />
         </div>
 
-        <div class="param-input-row">
-          <label class="param-label" for="paramSizePct">Pozisyon (%)</label>
-          <input type="number" id="paramSizePct" class="param-input" value="20" min="1" max="100" step="1" />
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 14px">
+          <label style="color:var(--text-secondary);font-size:12px">Pozisyon (%)</label>
+          <input type="number" id="paramSizePct" value="20" min="1" max="100" step="1" style="background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-main);padding:5px 8px;font-size:12px;width:84px;text-align:right;font-family:var(--font-mono)" />
         </div>
 
-        <div class="param-input-row">
-          <label class="param-label" for="paramCommPct">Komisyon (%)</label>
-          <input type="number" id="paramCommPct" class="param-input" value="0.05" min="0" max="2" step="0.01" />
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 14px">
+          <label style="color:var(--text-secondary);font-size:12px">Komisyon (%)</label>
+          <input type="number" id="paramCommPct" value="0.05" min="0" max="2" step="0.01" style="background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-main);padding:5px 8px;font-size:12px;width:84px;text-align:right;font-family:var(--font-mono)" />
         </div>
 
-        <div class="param-actions">
-          <button id="btnApplyParams" class="btn-apply">Uygula</button>
-          <button id="btnResetParams" class="btn-reset">Varsayılan</button>
+        <div style="display:flex;gap:8px;padding:14px">
+          <button id="btnApplyParams" style="flex:1;background:var(--accent);border:none;border-radius:4px;color:#fff;font-weight:700;font-size:12px;padding:9px 0;cursor:pointer">Uygula</button>
+          <button id="btnResetParams" style="background:transparent;border:1px solid var(--border);border-radius:4px;color:var(--text-secondary);font-size:12px;padding:9px 12px;cursor:pointer">Varsayılan</button>
         </div>
 
-        <div class="strategy-info-box">
-          <div class="info-box-head">Strateji mantığı</div>
-          VWAP her onaylanmış swing dip/tepe noktasına yeniden çapalanır. Fiyat, dip çapalı VWAP'ı yukarı kestiğinde <span class="bull-text" style="font-weight: 600;">uzun</span>, tepe çapalı VWAP'ı aşağı kestiğinde <span class="bear-text" style="font-weight: 600;">kısa</span> pozisyon açılır. Çıkış: ±2σ hedef, ∓1σ stop veya ters sinyal.
+        <div style="margin:0 14px 14px;padding:10px 12px;background:var(--bg-app);border:1px solid var(--border);border-radius:6px;font-size:11px;color:var(--text-muted);line-height:1.5">
+          <div style="font-weight:700;color:var(--text-secondary);margin-bottom:4px">Strateji mantığı</div>
+          VWAP her onaylanmış swing dip/tepe noktasına yeniden çapalanır. Fiyat, dip çapalı VWAP'ı yukarı kestiğinde <span style="color:var(--bull);font-weight:600">uzun</span>, tepe çapalı VWAP'ı aşağı kestiğinde <span style="color:var(--bear);font-weight:600">kısa</span> pozisyon açılır. Çıkış: ±2σ hedef, ∓1σ stop veya ters sinyal.
         </div>
-
       </aside>
 
     </div>
 
     <!-- 5. DURUM ÇUBUĞU (26px) -->
-    <footer class="status-bar">
-      <span id="statusLeft" class="status-left">Yükleniyor…</span>
-      <div style="flex: 1"></div>
-      <div class="status-right">
-        <span>Kaydırma: <strong>sürükle</strong> · Yakınlaştırma: <strong>tekerlek</strong></span>
-        <span style="color: var(--border)">|</span>
-        <span id="statusBadge" class="status-badge-demo">Sentetik örnek veri — demo</span>
+    <footer style="display:flex;align-items:center;gap:14px;height:26px;padding:0 12px;background:var(--bg-panel);border-top:1px solid var(--border);flex:none;font-size:11px;color:var(--text-muted)">
+      <span id="statusLeft" style="font-family:var(--font-mono)">Yükleniyor…</span>
+      <div style="flex:1"></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span>Kaydırma: sürükle · Yakınlaştırma: tekerlek</span>
+        <span style="color:var(--border)">|</span>
+        <span id="statusBadge" style="color:var(--warning);font-weight:600">Sentetik örnek veri — demo</span>
       </div>
     </footer>
 
   </div>
 
-  <!-- Scripts -->
-  <script type="module" src="app.js"></script>
+  <script type="module" src="app.js?v=20260818_hifi"></script>
   <script src="hub-nav.js"></script>
 </body>
 </html>

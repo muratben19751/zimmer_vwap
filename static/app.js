@@ -988,8 +988,14 @@ import * as Engine from "./engine.js";
     // Timeframe Segment Buttons
     tfSegment.querySelectorAll(".seg-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
-        tfSegment.querySelectorAll(".seg-btn").forEach((b) => b.classList.remove("active"));
+        tfSegment.querySelectorAll(".seg-btn").forEach((b) => {
+          b.classList.remove("active");
+          b.style.background = "transparent";
+          b.style.color = "var(--text-muted)";
+        });
         btn.classList.add("active");
+        btn.style.background = "var(--border)";
+        btn.style.color = "var(--text-strong)";
         state.tf = btn.dataset.tf;
         loadDataAndCompute();
       });
@@ -1021,10 +1027,14 @@ import * as Engine from "./engine.js";
       btn.addEventListener("click", () => {
         tabs.forEach((t) => {
           t.btn.classList.remove("active");
-          t.content.classList.remove("active");
+          t.btn.style.color = "var(--text-muted)";
+          t.btn.style.borderBottom = "2px solid transparent";
+          t.content.style.display = "none";
         });
         btn.classList.add("active");
-        content.classList.add("active");
+        btn.style.color = "var(--accent)";
+        btn.style.borderBottom = "2px solid var(--accent)";
+        content.style.display = id === "perf" ? "block" : "flex";
         state.tab = id;
         requestDraw();
       });
