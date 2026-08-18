@@ -695,44 +695,26 @@ import * as Engine from "./engine.js";
       console.warn("API calculate error:", err);
     }
 
-    if (!apiData || !apiData.candles || apiData.candles.length === 0) {
-      const cleanSym = state.symbol.replace(/^nau:[^:]+:/, "").split(":")[0] || "QQQ";
-      const rawBars = Engine.genData(cleanSym, state.tf, 420);
-      const swings = Engine.computeSwings(rawBars, state.params.len);
-      const vw = Engine.computeVWAP(rawBars, swings, state.params.m1, state.params.m2);
-      apiData = {
-        source: `Demo: ${cleanSym} (${state.tf})`,
-        candles: rawBars.map((b) => ({ time: Math.floor(b.t / 1000), open: b.o, high: b.h, low: b.l, close: b.c })),
-        volumes: rawBars.map((b) => ({ time: Math.floor(b.t / 1000), value: b.v, color: b.c >= b.o ? "rgba(8,153,129,0.35)" : "rgba(242,54,69,0.35)" })),
-        vwap_points: vw.filter(Boolean).map((w, i) => ({ time: Math.floor(rawBars[i].t / 1000), value: w.v, dir: w.aType === "L" ? 1 : -1, segment_id: w.aI })),
-        anchors: swings.map((sw) => ({ time: Math.floor(rawBars[sw.i].t / 1000), position: sw.type === "H" ? "aboveBar" : "belowBar", color: sw.type === "H" ? "#f23645" : "#089981", shape: sw.type === "H" ? "arrowDown" : "arrowUp", label: sw.label })),
-      };
-    }
+    try {
+      if (!apiData || !apiData.candles || apiData.candles.length === 0) {
+        const cleanSym = state.symbol.replace(/^nau:[^:]+:/, "").split(":")[0] || "QQQ";
+        const rawBars = Engine.genData(cleanSym, state.tf, 420);
+        const swings = Engine.computeSwings(rawBars, state.params.len);
+        const vw = Engine.computeVWAP(rawBars, swings, state.params.m1, state.params.m2);
+        apiData = {
+          source: `Demo: ${cleanSym} (${state.tf})`,
+          candles: rawBars.map((b) => ({ time: Math.floor(b.t / 1000), open: b.o, high: b.h, low: b.l, close: b.c })),
+          volumes: rawBars.map((b) => ({ time: Math.floor(b.t / 1000), value: b.v, color: b.c >= b.o ? "rgba(8,153,129,0.35)" : "rgba(242,54,69,0.35)" })),
+          vwap_points: vw.filter(Boolean).map((w, i) => ({ time: Math.floor(rawBars[i].t / 1000), value: w.v, dir: w.aType === "L" ? 1 : -1, segment_id: w.aI })),
+          anchors: swings.map((sw) => ({ time: Math.floor(rawBars[sw.i].t / 1000), position: sw.type === "H" ? "aboveBar" : "belowBar", color: sw.type === "H" ? "#f23645" : "#089981", shape: sw.type === "H" ? "arrowDown" : "arrowUp", label: sw.label })),
+        };
+      }
 
-    if (handoffChartTitle) {
-      handoffChartTitle.textContent = `${apiData.source} — Dynamic Swing Anchored VWAP`;
-    }
+      if (handoffChartTitle) {
+        handoffChartTitle.textContent = `${apiData.source} — Dynamic Swing Anchored VWAP`;
+      }
 
-    let rawBars = (apiData.candles || []).map((c, i) => ({
-      t: c.time * 1000,
-      o: c.open,
-      h: c.high,
-      l: c.low,
-      c: c.close,
-      v: apiData.volumes && apiData.volumes[i] ? apiData.volumes[i].value : 1000,
-    }));
-
-    // Tarih Filtresi (3 Yıl)
-    if (state.dateFrom) {
-      const tFrom = Date.parse(state.dateFrom);
-      if (!isNaN(tFrom)) rawBars = rawBars.filter((b) => b.t >= tFrom);
-    }
-    if (state.dateTo) {
-      const tTo = Date.parse(state.dateTo);
-      if (!isNaN(tTo)) rawBars = rawBars.filter((b) => b.t <= tTo + 86400000);
-    }
-    if (rawBars.length < 20) {
-      rawBars = (apiData.candles || []).map((c, i) => ({
+      let rawBars = (apiData.candles || []).map((c, i) => ({
         t: c.time * 1000,
         o: c.open,
         h: c.high,
@@ -740,40 +722,62 @@ import * as Engine from "./engine.js";
         c: c.close,
         v: apiData.volumes && apiData.volumes[i] ? apiData.volumes[i].value : 1000,
       }));
+
+      // Tarih Filtresi (3 Yıl)
+      if (state.dateFrom) {
+        const tFrom = Date.parse(state.dateFrom);
+        if (!isNaN(tFrom)) rawBars = rawBars.filter((b) => b.t >= tFrom);
+      }
+      if (state.dateTo) {
+        const tTo = Date.parse(state.dateTo);
+        if (!isNaN(tTo)) rawBars = rawBars.filter((b) => b.t <= tTo + 86400000);
+      }
+      if (rawBars.length < 20) {
+        rawBars = (apiData.candles || []).map((c, i) => ({
+          t: c.time * 1000,
+          o: c.open,
+          h: c.high,
+          l: c.low,
+          c: c.close,
+          v: apiData.volumes && apiData.volumes[i] ? apiData.volumes[i].value : 1000,
+        }));
+      }
+
+      const swings = Engine.computeSwings(rawBars, state.params.len);
+      const vw = Engine.computeVWAP(rawBars, swings, state.params.m1, state.params.m2);
+      const bt = Engine.backtest(rawBars, vw, state.params);
+      const met = Engine.metrics(bt.trades, bt.equity, state.params.capital, state.tf, rawBars);
+      met.comm = bt.commTotal;
+
+      renderState.data = rawBars;
+      renderState.vw = vw;
+      renderState.swings = swings;
+      renderState.trades = bt.trades;
+      renderState.equity = bt.equity;
+      renderState.met = met;
+
+      if (ranLabel) {
+        ranLabel.textContent = `Son çalıştırma: ${new Date().toLocaleTimeString("tr-TR")}`;
+      }
+
+      if (statusLeft) {
+        statusLeft.textContent = `${apiData.source} · ${rawBars.length} bar · ${ft2(rawBars[0].t)} → ${ft2(rawBars[rawBars.length - 1].t)}`;
+      }
+
+      renderHandoffLightweightChart(apiData, rawBars, bt.trades);
+      renderGenericKpiTiles(kpiTilesContainer, met);
+      renderPerformanceSummary(met);
+      renderTradesTable(bt.trades, rawBars);
+      
+      setTimeout(() => {
+        drawGenericEquity(equityCanvas, equityWrap, bt.equity, rawBars, met, state.params.capital);
+        resizeHandoffChart();
+      }, 40);
+    } catch (err) {
+      console.error("Handoff hesaplama hatası:", err);
+    } finally {
+      setLoading(false);
     }
-
-    const swings = Engine.computeSwings(rawBars, state.params.len);
-    const vw = Engine.computeVWAP(rawBars, swings, state.params.m1, state.params.m2);
-    const bt = Engine.backtest(rawBars, vw, state.params);
-    const met = Engine.metrics(bt.trades, bt.equity, state.params.capital, state.tf, rawBars);
-    met.comm = bt.commTotal;
-
-    renderState.data = rawBars;
-    renderState.vw = vw;
-    renderState.swings = swings;
-    renderState.trades = bt.trades;
-    renderState.equity = bt.equity;
-    renderState.met = met;
-
-    if (ranLabel) {
-      ranLabel.textContent = `Son çalıştırma: ${new Date().toLocaleTimeString("tr-TR")}`;
-    }
-
-    if (statusLeft) {
-      statusLeft.textContent = `${apiData.source} · ${rawBars.length} bar · ${ft2(rawBars[0].t)} → ${ft2(rawBars[rawBars.length - 1].t)}`;
-    }
-
-    renderHandoffLightweightChart(apiData, rawBars, bt.trades);
-    renderGenericKpiTiles(kpiTilesContainer, met);
-    renderPerformanceSummary(met);
-    renderTradesTable(bt.trades, rawBars);
-    
-    setTimeout(() => {
-      drawGenericEquity(equityCanvas, equityWrap, bt.equity, rawBars, met, state.params.capital);
-      resizeHandoffChart();
-    }, 40);
-
-    setLoading(false);
   }
 
   function renderHandoffLightweightChart(apiData, data, trades) {

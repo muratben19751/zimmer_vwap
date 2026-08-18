@@ -101,9 +101,9 @@ export function computeVWAP(data, swings, m1 = 1, m2 = 2) {
     const tp = (data[i].h + data[i].l + data[i].c) / 3;
     sumPV += tp * data[i].v;
     sumV += data[i].v;
-    sumP2V += tp * tp * data[j = i].v;
-    const v = sumPV / sumV;
-    const sd = Math.sqrt(Math.max(0, sumP2V / sumV - v * v));
+    sumP2V += tp * tp * data[i].v;
+    const v = sumV > 0 ? sumPV / sumV : tp;
+    const sd = sumV > 0 ? Math.sqrt(Math.max(0, sumP2V / sumV - v * v)) : 0;
     out[i] = {
       v,
       u1: v + sd * m1,
