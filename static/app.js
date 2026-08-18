@@ -275,23 +275,28 @@ import * as Engine from "./engine.js";
       const res = await fetch("/api/nau/catalog");
       if (!res.ok) return;
       const cat = await res.json();
+      state.nauCatalog = cat;
 
       // Populate Handoff Optgroups
-      nauEquitiesGroup.innerHTML = "";
-      (cat.equities || []).forEach((eq) => {
-        const opt = document.createElement("option");
-        opt.value = `nau:equity:${eq.symbol}`;
-        opt.textContent = `${eq.symbol} — (${eq.exchange}, ${eq.total_bars.toLocaleString()} Bar)`;
-        nauEquitiesGroup.appendChild(opt);
-      });
+      if (nauEquitiesGroup) {
+        nauEquitiesGroup.innerHTML = "";
+        (cat.equities || []).forEach((eq) => {
+          const opt = document.createElement("option");
+          opt.value = `nau:equity:${eq.symbol}`;
+          opt.textContent = `${eq.symbol} — (${eq.exchange}, ${eq.total_bars.toLocaleString()} Bar)`;
+          nauEquitiesGroup.appendChild(opt);
+        });
+      }
 
-      nauBybitGroup.innerHTML = "";
-      (cat.bybit || []).forEach((by) => {
-        const opt = document.createElement("option");
-        opt.value = `nau:bybit:${by.symbol}:${by.category}:${by.timeframe}`;
-        opt.textContent = `${by.symbol} [${by.category.toUpperCase()}] — (${by.timeframe}, ${by.total_bars.toLocaleString()} Bar)`;
-        nauBybitGroup.appendChild(opt);
-      });
+      if (nauBybitGroup) {
+        nauBybitGroup.innerHTML = "";
+        (cat.bybit || []).forEach((by) => {
+          const opt = document.createElement("option");
+          opt.value = `nau:bybit:${by.symbol}:${by.category}:${by.timeframe}`;
+          opt.textContent = `${by.symbol} [${by.category.toUpperCase()}] — (${by.timeframe}, ${by.total_bars.toLocaleString()} Bar)`;
+          nauBybitGroup.appendChild(opt);
+        });
+      }
 
       // Populate Terminal Selectors
       updateTerminalSymbolSelect(cat);
@@ -300,23 +305,29 @@ import * as Engine from "./engine.js";
     }
   }
 
-  function updateTerminalSymbolSelect(cat) {
-    if (!termNauSymbolSelect) return;
+  function updateTerminalSymbolSelect(cat = state.nauCatalog) {
+    if (!termNauSymbolSelect || !cat) return;
     termNauSymbolSelect.innerHTML = "";
     if (state.terminalNauCategory === "equity") {
       (cat.equities || []).forEach((eq) => {
         const opt = document.createElement("option");
         opt.value = eq.symbol;
-        opt.textContent = `${eq.symbol} (${eq.total_bars.toLocaleString()} Bar)`;
+        opt.textContent = `${eq.symbol} — (${eq.exchange}, ${eq.total_bars.toLocaleString()} Bar)`;
         termNauSymbolSelect.appendChild(opt);
       });
+      if (cat.equities && cat.equities.length > 0) {
+        termNauSymbolSelect.value = cat.equities[0].symbol;
+      }
     } else {
       (cat.bybit || []).forEach((by) => {
         const opt = document.createElement("option");
         opt.value = `${by.symbol}:${by.category}`;
-        opt.textContent = `${by.symbol} [${by.category.toUpperCase()}]`;
+        opt.textContent = `${by.symbol} [${by.category.toUpperCase()}] — (${by.timeframe})`;
         termNauSymbolSelect.appendChild(opt);
       });
+      if (cat.bybit && cat.bybit.length > 0) {
+        termNauSymbolSelect.value = `${cat.bybit[0].symbol}:${cat.bybit[0].category}`;
+      }
     }
   }
 
@@ -1303,15 +1314,21 @@ import * as Engine from "./engine.js";
       termPillEquity.classList.add("active");
       termPillBybit.classList.remove("active");
       state.terminalNauCategory = "equity";
-      fetchNauCatalog();
+      updateTerminalSymbolSelect(state.nauCatalog);
+      loadTerminalData();
     });
 
     termPillBybit.addEventListener("click", () => {
       termPillBybit.classList.add("active");
       termPillEquity.classList.remove("active");
       state.terminalNauCategory = "bybit";
-      fetchNauCatalog();
+      updateTerminalSymbolSelect(state.nauCatalog);
+      loadTerminalData();
     });
+
+    termNauSymbolSelect.addEventListener("change", () => loadTerminalData());
+    termNauTfSelect.addEventListener("change", () => loadTerminalData());
+    termNauLimitSelect.addEventListener("change", () => loadTerminalData());
 
     termPrdSlider.addEventListener("input", () => { termPrdVal.textContent = termPrdSlider.value; });
     termAptSlider.addEventListener("input", () => { termAptVal.textContent = termAptSlider.value; });
@@ -1399,7 +1416,11 @@ import * as Engine from "./engine.js";
     setupEventListeners();
     await fetchNauCatalog();
     setViewMode(state.viewMode);
-    await loadHandoffData();
+    if (state.viewMode === "handoff") {
+      await loadHandoffData();
+    } else {
+      await loadTerminalData();
+    }
   }
 
   if (document.readyState === "loading") {
