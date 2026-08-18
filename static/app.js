@@ -55,15 +55,15 @@ import * as Engine from "./engine.js";
   ];
 
   const state = {
-    viewMode: localStorage.getItem("zvwap_view_mode") || "handoff", // "handoff" | "terminal"
+    viewMode: localStorage.getItem("zvwap_view_mode") || "handoff",
     theme: localStorage.getItem("zvwap_theme") || "light",
     
     // Handoff state
-    symbol: "BTCUSDT",
+    symbol: "nau:equity:AA",
     tf: "1h",
     dateFrom: "",
     dateTo: "",
-    handoffTab: "overview", // "overview" | "perf" | "trades"
+    handoffTab: "overview",
     params: { ...DEF_PARAMS },
     nauCatalog: null,
 
@@ -99,7 +99,6 @@ import * as Engine from "./engine.js";
   // --------------------------------------------------------------------------
   const htmlEl = document.documentElement;
 
-  // View Switcher Elements
   const btnViewHandoff = document.getElementById("btnViewHandoff");
   const btnViewTerminal = document.getElementById("btnViewTerminal");
   const viewHandoff = document.getElementById("viewHandoff");
@@ -107,7 +106,6 @@ import * as Engine from "./engine.js";
   const handoffTopControls = document.getElementById("handoffTopControls");
   const themeSelect = document.getElementById("themeSelect");
 
-  // Handoff Elements
   const sourceSelect = document.getElementById("sourceSelect");
   const symbolSelect = document.getElementById("symbolSelect");
   const nauEquitiesGroup = document.getElementById("nauEquitiesGroup");
@@ -119,6 +117,7 @@ import * as Engine from "./engine.js";
   const ranLabel = document.getElementById("ranLabel");
 
   const chartWrap = document.getElementById("chartWrap");
+  const handoffChartTitle = document.getElementById("handoffChartTitle");
   const handoffLwChartContainer = document.getElementById("handoffLwChartContainer");
 
   const tabBtnOverview = document.getElementById("tabBtnOverview");
@@ -262,12 +261,7 @@ import * as Engine from "./engine.js";
         initHandoffLightweightChart();
       }
       setTimeout(() => {
-        if (handoffLwChart && handoffLwChartContainer) {
-          handoffLwChart.applyOptions({
-            width: handoffLwChartContainer.clientWidth,
-            height: handoffLwChartContainer.clientHeight,
-          });
-        }
+        resizeHandoffChart();
         drawEquity();
       }, 50);
       loadHandoffData();
@@ -285,12 +279,22 @@ import * as Engine from "./engine.js";
       setTimeout(() => {
         if (termLwChart && termChartContainer) {
           termLwChart.applyOptions({
-            width: termChartContainer.clientWidth,
-            height: termChartContainer.clientHeight,
+            width: termChartContainer.clientWidth || 800,
+            height: termChartContainer.clientHeight || 420,
           });
         }
       }, 50);
       loadTerminalData();
+    }
+  }
+
+  function resizeHandoffChart() {
+    if (handoffLwChart && handoffLwChartContainer) {
+      const w = handoffLwChartContainer.clientWidth;
+      const h = handoffLwChartContainer.clientHeight;
+      if (w > 20 && h > 20) {
+        handoffLwChart.applyOptions({ width: w, height: h });
+      }
     }
   }
 
@@ -370,10 +374,20 @@ import * as Engine from "./engine.js";
     const container = document.getElementById("handoffLwChartContainer");
     if (!container || !window.LightweightCharts) return;
 
+    if (handoffLwChart) {
+      try {
+        handoffLwChart.remove();
+      } catch (e) {}
+      handoffLwChart = null;
+    }
+
     const colors = getThemeColors();
+    const w = container.clientWidth || 800;
+    const h = container.clientHeight || 400;
+
     handoffLwChart = LightweightCharts.createChart(container, {
-      width: container.clientWidth || 800,
-      height: container.clientHeight || 400,
+      width: w,
+      height: h,
       layout: {
         background: { type: "solid", color: colors.bgApp },
         textColor: colors.textMain,
@@ -412,14 +426,7 @@ import * as Engine from "./engine.js";
       scaleMargins: { top: 0.82, bottom: 0 },
     });
 
-    window.addEventListener("resize", () => {
-      if (handoffLwChart && container) {
-        handoffLwChart.applyOptions({
-          width: container.clientWidth,
-          height: container.clientHeight,
-        });
-      }
-    });
+    window.addEventListener("resize", () => resizeHandoffChart());
   }
 
   async function loadHandoffData() {
@@ -483,7 +490,6 @@ import * as Engine from "./engine.js";
       };
     }
 
-    const handoffChartTitle = document.getElementById("handoffChartTitle");
     if (handoffChartTitle) {
       handoffChartTitle.textContent = `${apiData.source} — Dynamic Swing Anchored VWAP`;
     }
@@ -529,12 +535,28 @@ import * as Engine from "./engine.js";
     if (!handoffLwChart) initHandoffLightweightChart();
     if (!handoffLwChart) return;
 
+    const container = document.getElementById("handoffLwChartContainer");
+    if (container && container.clientWidth && container.clientHeight) {
+      handoffLwChart.applyOptions({
+        width: container.clientWidth,
+        height: container.clientHeight,
+      });
+    }
+
     // 1. Candles & Volume
-    handoffCandleSeries.setData(apiData.candles);
-    handoffVolumeSeries.setData(apiData.volumes);
+    if (apiData.candles && apiData.candles.length) {
+      handoffCandleSeries.setData(apiData.candles);
+    }
+    if (apiData.volumes && apiData.volumes.length) {
+      handoffVolumeSeries.setData(apiData.volumes);
+    }
 
     // 2. Clear old VWAP line series
-    handoffVwapSeriesList.forEach((s) => handoffLwChart.removeSeries(s));
+    handoffVwapSeriesList.forEach((s) => {
+      try {
+        handoffLwChart.removeSeries(s);
+      } catch (e) {}
+    });
     handoffVwapSeriesList = [];
 
     // 3. Segment VWAP Lines directly from backend algorithm
@@ -564,64 +586,46 @@ import * as Engine from "./engine.js";
 
     // Swing Pivot Markers from backend
     (apiData.anchors || []).forEach((a) => {
-      markers.push({
-        time: a.time,
-        position: a.position,
-        color: a.color,
-        shape: a.shape,
-        text: a.label,
-        size: 1.1,
-      });
+      if (a.time) {
+        markers.push({
+          time: a.time,
+          position: a.position || (a.label.includes("H") ? "aboveBar" : "belowBar"),
+          color: a.color || (a.label.includes("H") ? "#f23645" : "#089981"),
+          shape: a.shape || (a.label.includes("H") ? "arrowDown" : "arrowUp"),
+          text: a.label,
+          size: 1.1,
+        });
+      }
     });
 
     // Trade Markers
     (trades || []).forEach((t) => {
       if (data[t.ei]) {
         const isLong = t.side === "L";
-        markers.push({
-          time: Math.floor(data[t.ei].t / 1000),
-          position: isLong ? "belowBar" : "aboveBar",
-          color: isLong ? "#089981" : "#f23645",
-          shape: isLong ? "arrowUp" : "arrowDown",
-          text: isLong ? "BUY" : "SELL",
-          size: 1.4,
-        });
+        const tTime = Math.floor(data[t.ei].t / 1000);
+        if (tTime) {
+          markers.push({
+            time: tTime,
+            position: isLong ? "belowBar" : "aboveBar",
+            color: isLong ? "#089981" : "#f23645",
+            shape: isLong ? "arrowUp" : "arrowDown",
+            text: isLong ? "BUY" : "SELL",
+            size: 1.4,
+          });
+        }
       }
       if (t.xi != null && data[t.xi]) {
-        markers.push({
-          time: Math.floor(data[t.xi].t / 1000),
-          position: t.side === "L" ? "aboveBar" : "belowBar",
-          color: "#758696",
-          shape: "circle",
-          text: "EXIT",
-          size: 0.9,
-        });
-      }
-    });
-
-    markers.sort((a, b) => a.time - b.time);
-    handoffCandleSeries.setMarkers(markers);
-    handoffLwChart.timeScale().fitContent();
-  }
-        const isLong = t.side === "L";
-        markers.push({
-          time: Math.floor(data[t.ei].t / 1000),
-          position: isLong ? "belowBar" : "aboveBar",
-          color: isLong ? colors.bull : colors.bear,
-          shape: isLong ? "arrowUp" : "arrowDown",
-          text: isLong ? "BUY" : "SELL",
-          size: 1.4,
-        });
-      }
-      if (t.xi != null && data[t.xi]) {
-        markers.push({
-          time: Math.floor(data[t.xi].t / 1000),
-          position: t.side === "L" ? "aboveBar" : "belowBar",
-          color: "#758696",
-          shape: "circle",
-          text: "EXIT",
-          size: 0.9,
-        });
+        const xTime = Math.floor(data[t.xi].t / 1000);
+        if (xTime) {
+          markers.push({
+            time: xTime,
+            position: t.side === "L" ? "aboveBar" : "belowBar",
+            color: "#758696",
+            shape: "circle",
+            text: "EXIT",
+            size: 0.9,
+          });
+        }
       }
     });
 
@@ -808,12 +812,23 @@ import * as Engine from "./engine.js";
   // 7. Terminal Controller
   // --------------------------------------------------------------------------
   function initTerminalLightweightChart() {
-    if (!termChartContainer || !window.LightweightCharts) return;
+    const container = document.getElementById("termChartContainer");
+    if (!container || !window.LightweightCharts) return;
+
+    if (termLwChart) {
+      try {
+        termLwChart.remove();
+      } catch (e) {}
+      termLwChart = null;
+    }
 
     const colors = getThemeColors();
-    termLwChart = LightweightCharts.createChart(termChartContainer, {
-      width: termChartContainer.clientWidth || 800,
-      height: termChartContainer.clientHeight || 420,
+    const w = container.clientWidth || 800;
+    const h = container.clientHeight || 420;
+
+    termLwChart = LightweightCharts.createChart(container, {
+      width: w,
+      height: h,
       layout: {
         background: { type: "solid", color: colors.bgApp },
         textColor: colors.textMain,
@@ -852,10 +867,10 @@ import * as Engine from "./engine.js";
     });
 
     window.addEventListener("resize", () => {
-      if (termLwChart && termChartContainer) {
+      if (termLwChart && container) {
         termLwChart.applyOptions({
-          width: termChartContainer.clientWidth,
-          height: termChartContainer.clientHeight,
+          width: container.clientWidth || 800,
+          height: container.clientHeight || 420,
         });
       }
     });
@@ -914,7 +929,9 @@ import * as Engine from "./engine.js";
     if (!termLwChart) initTerminalLightweightChart();
     if (!termLwChart) return;
 
-    termChartTitle.textContent = `${data.source} — Dynamic Swing Anchored VWAP`;
+    if (termChartTitle) {
+      termChartTitle.textContent = `${data.source} — Dynamic Swing Anchored VWAP`;
+    }
 
     termCandleSeries.setData(data.candles);
     termVolumeSeries.setData(data.volumes);
@@ -1310,12 +1327,7 @@ import * as Engine from "./engine.js";
     }
 
     const ro = new ResizeObserver(() => {
-      if (handoffLwChart && handoffLwChartContainer) {
-        handoffLwChart.applyOptions({
-          width: handoffLwChartContainer.clientWidth,
-          height: handoffLwChartContainer.clientHeight,
-        });
-      }
+      resizeHandoffChart();
       drawEquity();
     });
     ro.observe(chartWrap);
